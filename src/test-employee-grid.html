@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Employee Grid</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+        .status.activo { background-color: #10b981; color: white; }
+        .status.inactivo { background-color: #9ca3af; color: white; }
+        .loading { color: #666; font-style: italic; }
+        .error { color: #ef4444; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test del Grid de Empleados</h1>
+    <p id="status" class="loading">Cargando empleados...</p>
+    
+    <table id="employeeTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>🆔 ID</th>
+                <th>👤 Nombre Completo</th>
+                <th>🏢 Entidad</th>
+                <th>💼 Puesto</th>
+                <th>📍 Área</th>
+                <th>🎯 Proyecto</th>
+                <th>🔧 Célula</th>
+                <th>📊 Estado</th>
+            </tr>
+        </thead>
+        <tbody id="employeeBody">
+        </tbody>
+    </table>
+
+    <script>
+        async function loadEmployees() {
+            try {
+                console.log('🔄 Cargando empleados...');
+                const response = await fetch('/api/employees-v2');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const employees = await response.json();
+                console.log('📊 Empleados cargados:', employees.length);
+                console.log('🔍 Primer empleado:', employees[0]);
+                
+                const statusEl = document.getElementById('status');
+                const tableEl = document.getElementById('employeeTable');
+                const bodyEl = document.getElementById('employeeBody');
+                
+                statusEl.textContent = `✅ ${employees.length} empleados cargados exitosamente`;
+                statusEl.className = '';
+                
+                bodyEl.innerHTML = '';
+                
+                employees.slice(0, 10).forEach(emp => {
+                    const row = document.createElement('tr');
+                    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+                    
+                    row.innerHTML = `
+                        <td>${emp.id || 'N/A'}</td>
+                        <td>${fullName || 'N/A'}</td>
+                        <td>${emp.entity_name || 'N/A'}</td>
+                        <td>${emp.position_name || 'N/A'}</td>
+                        <td>${emp.area_name || 'N/A'}</td>
+                        <td>${emp.project_name || 'N/A'}</td>
+                        <td>${emp.cell_name || 'N/A'}</td>
+                        <td><span class="status ${(emp.status || 'activo').toLowerCase()}">${emp.status || 'Activo'}</span></td>
+                    `;
+                    bodyEl.appendChild(row);
+                });
+                
+                tableEl.style.display = 'table';
+                
+            } catch (error) {
+                console.error('❌ Error cargando empleados:', error);
+                const statusEl = document.getElementById('status');
+                statusEl.textContent = `❌ Error: ${error.message}`;
+                statusEl.className = 'error';
+            }
+        }
+        
+        // Cargar empleados al cargar la página
+        window.addEventListener('DOMContentLoaded', loadEmployees);
+    </script>
+</body>
+</html>

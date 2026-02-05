@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Pestañas Direct</title>
+    <style>
+        .tab-button { padding: 10px 20px; margin: 5px; border: 2px solid #ccc; cursor: pointer; }
+        .tab-button.active { border-color: #007bff; background: #007bff; color: white; }
+        .tab-content { display: none; padding: 20px; border: 1px solid #ddd; margin: 10px 0; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body>
+    <h3>Test directo de pestañas</h3>
+    
+    <div class="tab-buttons">
+        <button type="button" class="tab-button active" onclick="
+            var buttons = document.querySelectorAll('.tab-button');
+            var contents = document.querySelectorAll('.tab-content');
+            buttons.forEach(function(b) { b.classList.remove('active'); });
+            contents.forEach(function(c) { c.classList.remove('active'); });
+            this.classList.add('active');
+            document.getElementById('tab-general').classList.add('active');
+            console.log('Test: Switched to general');
+        ">General</button>
+        
+        <button type="button" class="tab-button" onclick="
+            var buttons = document.querySelectorAll('.tab-button');
+            var contents = document.querySelectorAll('.tab-content');
+            buttons.forEach(function(b) { b.classList.remove('active'); });
+            contents.forEach(function(c) { c.classList.remove('active'); });
+            this.classList.add('active');
+            document.getElementById('tab-expediente').classList.add('active');
+            console.log('Test: Switched to expediente');
+        ">Expediente</button>
+        
+        <button type="button" class="tab-button" onclick="
+            var buttons = document.querySelectorAll('.tab-button');
+            var contents = document.querySelectorAll('.tab-content');
+            buttons.forEach(function(b) { b.classList.remove('active'); });
+            contents.forEach(function(c) { c.classList.remove('active'); });
+            this.classList.add('active');
+            document.getElementById('tab-hr').classList.add('active');
+            console.log('Test: Switched to hr');
+        ">Recursos Humanos</button>
+    </div>
+    
+    <div class="tab-content active" id="tab-general">
+        <h4>Contenido General</h4>
+        <p>Esta es la pestaña de información general.</p>
+    </div>
+    
+    <div class="tab-content" id="tab-expediente">
+        <h4>Contenido Expediente</h4>
+        <p>Esta es la pestaña de expediente.</p>
+    </div>
+    
+    <div class="tab-content" id="tab-hr">
+        <h4>Contenido Recursos Humanos</h4>
+        <p>Esta es la pestaña de recursos humanos.</p>
+    </div>
+    
+    <script>
+        console.log('Test page loaded - direct inline onclick approach');
+    </script>
+</body>
+</html>

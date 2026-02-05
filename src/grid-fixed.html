@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP Afirma - Grid Fijo</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="brand">
+                <span class="brand-icon">🏢</span>
+                <span class="brand-text">ERP Afirma</span>
+            </div>
+        </header>
+
+        <div class="app-shell">
+            <nav class="sidebar">
+                <div class="nav">
+                    <a href="#" data-view="alta" class="active">
+                        <span>👥</span> Empleados
+                    </a>
+                    <a href="#" data-view="candidatos">
+                        <span>📝</span> Candidatos
+                    </a>
+                    <a href="#" data-view="inventario">
+                        <span>📦</span> Inventario
+                    </a>
+                    <a href="#" data-view="catalogs">
+                        <span>🗂️</span> Catálogos
+                    </a>
+                </div>
+            </nav>
+
+            <main class="content">
+                <section id="alta" class="view">
+                    <div class="view-header">
+                        <h2>👥 Gestión de Empleados</h2>
+                        <button id="add-employee-btn" class="btn btn-primary">
+                            ➕ Agregar Empleado
+                        </button>
+                    </div>
+
+                    <div class="card">
+                        <div class="filters-section">
+                            <div class="filters-grid">
+                                <div class="filter-group">
+                                    <input type="text" id="filter-name" placeholder="Buscar por nombre..." class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <input type="text" id="filter-position" placeholder="Buscar por puesto..." class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <input type="text" id="filter-entity" placeholder="Buscar por entidad..." class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <select id="filter-status" class="filter-select">
+                                        <option value="">Todos los estados</option>
+                                        <option value="Activo">Activo</option>
+                                        <option value="Inactivo">Inactivo</option>
+                                        <option value="En licencia">En licencia</option>
+                                    </select>
+                                </div>
+                                <div class="filter-actions">
+                                    <button id="filter-search-btn" class="btn btn-secondary">🔍 Buscar</button>
+                                    <button id="filter-clear-btn" class="btn btn-ghost">🧹 Limpiar</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="employee-grid-container">
+                            <div class="employee-grid-wrapper">
+                                <div id="employee-grid-loading" class="grid-message">
+                                    <div class="spinner"></div>
+                                    <p>Cargando empleados...</p>
+                                </div>
+
+                                <div id="employee-grid-empty" class="grid-message" style="display:none;">
+                                    <p>📭 No se encontraron empleados</p>
+                                </div>
+
+                                <div id="employee-grid-error" class="grid-message" style="display:none;">
+                                    <p>⚠️ <span id="error-message">Error al cargar empleados</span></p>
+                                </div>
+
+                                <table class="employee-table" id="employee-table" style="display:none;">
+                                    <thead>
+                                        <tr>
+                                            <th style="min-width:80px">🆔 ID</th>
+                                            <th style="min-width:200px">👤 Nombre Completo</th>
+                                            <th style="min-width:150px">🏢 Entidad</th>
+                                            <th style="min-width:180px">💼 Puesto</th>
+                                            <th style="min-width:130px">📍 Área</th>
+                                            <th style="min-width:150px">🎯 Proyecto</th>
+                                            <th style="min-width:120px">🔧 Célula</th>
+                                            <th style="min-width:100px">📊 Estado</th>
+                                            <th style="min-width:150px">⚙️ Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="employee-table-body">
+                                        <!-- Los empleados se cargarán aquí -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Scripts en orden correcto -->
+    <script src="js/config.js?v=3.0"></script>
+    <script src="js/employees.js?v=3.0"></script>
+    <script src="js/ui.js?v=3.0"></script>
+    
+    <script>
+        // Script de inicialización simplificado
+        console.log('🚀 Iniciando ERP Afirma - Grid Fijo');
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('📋 DOM cargado, iniciando carga de empleados...');
+            
+            try {
+                // Verificar que las funciones estén disponibles
+                console.log('🔍 Verificando funciones:', {
+                    fetchEmployees: typeof window.fetchEmployees,
+                    renderEmployees: typeof window.renderEmployees,
+                    showGridLoading: typeof window.showGridLoading
+                });
+                
+                // Mostrar cargando
+                if (typeof window.showGridLoading === 'function') {
+                    window.showGridLoading();
+                }
+                
+                // Esperar un poco para que todo esté listo
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Cargar empleados
+                if (typeof window.fetchEmployees === 'function') {
+                    console.log('📡 Obteniendo empleados...');
+                    const employees = await window.fetchEmployees();
+                    console.log('📊 Empleados obtenidos:', employees?.length);
+                    
+                    if (typeof window.renderEmployees === 'function') {
+                        console.log('🎨 Renderizando empleados...');
+                        window.renderEmployees(employees);
+                        console.log('✅ Grid renderizado exitosamente');
+                    } else {
+                        console.error('❌ renderEmployees no disponible');
+                    }
+                } else {
+                    console.error('❌ fetchEmployees no disponible');
+                }
+                
+            } catch (error) {
+                console.error('❌ Error:', error);
+                if (typeof window.showGridError === 'function') {
+                    window.showGridError(error.message);
+                }
+            }
+        });
+        
+        // También intentar después de que todo esté cargado
+        window.addEventListener('load', () => {
+            console.log('🔄 Window load - ejecutando carga de backup...');
+            setTimeout(async () => {
+                if (typeof window.reloadEmployees === 'function') {
+                    await window.reloadEmployees();
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

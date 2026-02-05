@@ -1,0 +1,41 @@
+# Configuración para Cloud Run
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: erp-afirma
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '10'
+        autoscaling.knative.dev/minScale: '1'
+        run.googleapis.com/cloudsql-instances: 'erp-afirma-solutions:us-central1:erp-afirma-db'
+        run.googleapis.com/cpu: '1'
+        run.googleapis.com/memory: '512Mi'
+    spec:
+      containerConcurrency: 100
+      containers:
+      - image: gcr.io/erp-afirma-solutions/erp-afirma
+        ports:
+        - containerPort: 8080
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: DB_HOST
+          value: "/cloudsql/erp-afirma-solutions:us-central1:erp-afirma-db"
+        - name: DB_NAME
+          value: "BD_afirma"
+        - name: DB_USER
+          value: "postgres"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-password
+              key: password
+        resources:
+          limits:
+            cpu: '1'
+            memory: '512Mi'

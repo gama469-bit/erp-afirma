@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ERP Afirma - Grid Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f8fafb; }
+        .debug-panel { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e5e7eb; }
+        .debug-title { font-weight: bold; color: #1f2937; margin-bottom: 10px; }
+        .debug-status { padding: 5px 10px; border-radius: 4px; margin: 5px 0; }
+        .debug-success { background: #d1fae5; color: #065f46; }
+        .debug-error { background: #fee2e2; color: #991b1b; }
+        .debug-info { background: #dbeafe; color: #1e40af; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; background: white; }
+        th, td { border: 1px solid #ddd; padding: 12px 8px; text-align: left; }
+        th { background: linear-gradient(135deg, #003d82, #0052cc); color: white; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .status { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .status.activo { background-color: #10b981; color: white; }
+        .status.inactivo { background-color: #9ca3af; color: white; }
+    </style>
+</head>
+<body>
+    <h1>🔍 ERP Afirma - Debug del Grid Principal</h1>
+    
+    <div class="debug-panel">
+        <div class="debug-title">📊 Estado de Carga</div>
+        <div id="debug-status" class="debug-status debug-info">Iniciando diagnóstico...</div>
+        <div id="debug-api" class="debug-status">API: Verificando...</div>
+        <div id="debug-files" class="debug-status">Archivos JS: Verificando...</div>
+        <div id="debug-render" class="debug-status">Renderizado: Pendiente...</div>
+    </div>
+    
+    <table id="employeeTable" style="display:none;">
+        <thead>
+            <tr>
+                <th style="min-width:80px">🆔 ID</th>
+                <th style="min-width:200px">👤 Nombre Completo</th>
+                <th style="min-width:150px">🏢 Entidad</th>
+                <th style="min-width:180px">💼 Puesto</th>
+                <th style="min-width:130px">📍 Área</th>
+                <th style="min-width:150px">🎯 Proyecto</th>
+                <th style="min-width:120px">🔧 Célula</th>
+                <th style="min-width:100px">📊 Estado</th>
+                <th style="min-width:150px">⚙️ Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="employeeBody">
+        </tbody>
+    </table>
+
+    <script>
+        console.log('🚀 Iniciando debug del grid...');
+
+        function updateDebugStatus(id, status, isError = false) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = status;
+                element.className = 'debug-status ' + (isError ? 'debug-error' : 'debug-success');
+            }
+            console.log(status);
+        }
+
+        async function debugLoadEmployees() {
+            try {
+                updateDebugStatus('debug-status', '🔄 Iniciando carga de empleados...');
+                
+                // Verificar API
+                updateDebugStatus('debug-api', '📡 Conectando a API...');
+                const response = await fetch('/api/employees-v2');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const employees = await response.json();
+                updateDebugStatus('debug-api', `✅ API: ${employees.length} empleados obtenidos`);
+                console.log('📊 Datos de empleados:', employees.slice(0, 3));
+                
+                // Verificar archivos JS
+                updateDebugStatus('debug-files', '📁 Verificando archivos JavaScript...');
+                
+                // Simular las funciones principales
+                function escapeHtml(unsafe) {
+                    return String(unsafe||'').replace(/[&<>"']/g, function(m){
+                        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m];
+                    });
+                }
+                
+                function getStatusColor(status) {
+                    const colors = {
+                        'Activo': { bg: '#10b981', text: 'white' },
+                        'Inactivo': { bg: '#9ca3af', text: 'white' },
+                        'En licencia': { bg: '#f59e0b', text: 'white' },
+                        'Suspendido': { bg: '#ef4444', text: 'white' }
+                    };
+                    return colors[status] || { bg: '#9ca3af', text: 'white' };
+                }
+                
+                updateDebugStatus('debug-files', '✅ Funciones JS: Disponibles');
+                
+                // Renderizar empleados
+                updateDebugStatus('debug-render', '🎨 Renderizando empleados...');
+                const tableEl = document.getElementById('employeeTable');
+                const bodyEl = document.getElementById('employeeBody');
+                
+                bodyEl.innerHTML = '';
+                
+                employees.slice(0, 20).forEach(emp => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid #e5e7eb';
+                    tr.style.transition = 'background-color 0.2s ease';
+                    tr.onmouseenter = () => tr.style.backgroundColor = '#f9fafb';
+                    tr.onmouseleave = () => tr.style.backgroundColor = 'transparent';
+                    
+                    const fullName = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+                    const status = emp.status || 'Activo';
+                    const statusColor = getStatusColor(status);
+                    
+                    tr.innerHTML = `
+                        <td style="padding:12px 8px;vertical-align:middle;text-align:center;font-weight:600;color:#1f2937;font-size:14px">${emp.id}</td>
+                        <td style="padding:12px 8px;vertical-align:middle;">
+                            <div style="font-weight:600;color:#1f2937;font-size:14px;">${escapeHtml(fullName)}</div>
+                            ${emp.employee_code ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">Código: ${escapeHtml(emp.employee_code)}</div>` : ''}
+                        </td>
+                        <td style="padding:12px 8px;vertical-align:middle;font-size:14px">${escapeHtml(emp.entity_name || '-')}</td>
+                        <td style="padding:12px 8px;vertical-align:middle;font-size:14px">${escapeHtml(emp.position_name || emp.position || '-')}</td>
+                        <td style="padding:12px 8px;vertical-align:middle;font-size:14px">${escapeHtml(emp.area_name || '-')}</td>
+                        <td style="padding:12px 8px;vertical-align:middle;font-size:14px">${escapeHtml(emp.project_name || '-')}</td>
+                        <td style="padding:12px 8px;vertical-align:middle;font-size:14px">${escapeHtml(emp.cell_name || '-')}</td>
+                        <td style="padding:12px 8px;vertical-align:middle;text-align:center">
+                            <span style="background:${statusColor.bg};color:${statusColor.text};padding:4px 8px;border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap">${status}</span>
+                        </td>
+                        <td style="padding:12px 8px;vertical-align:middle;">
+                            <div style="display:flex;gap:6px;justify-content:center">
+                                <button style="background:#0066ff;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">
+                                    ✏️ Editar
+                                </button>
+                                <button style="background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">
+                                    🗑️
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    bodyEl.appendChild(tr);
+                });
+                
+                tableEl.style.display = 'table';
+                updateDebugStatus('debug-render', `✅ Renderizado: ${employees.length} empleados mostrados`);
+                updateDebugStatus('debug-status', `🎉 ÉXITO: Grid funcionando con ${employees.length} empleados`);
+                
+            } catch (error) {
+                console.error('❌ Error en debug:', error);
+                updateDebugStatus('debug-status', `❌ ERROR: ${error.message}`, true);
+                updateDebugStatus('debug-api', `❌ API falló: ${error.message}`, true);
+            }
+        }
+        
+        // Cargar al inicializar la página
+        window.addEventListener('DOMContentLoaded', debugLoadEmployees);
+        
+        // También intentar cargar inmediatamente
+        debugLoadEmployees();
+    </script>
+</body>
+</html>

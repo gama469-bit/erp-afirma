@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Frontend</title>
+</head>
+<body>
+    <h1>Test de Frontend</h1>
+    <div id="test-results"></div>
+    
+    <script>
+    async function testEmployees() {
+        const results = document.getElementById('test-results');
+        
+        try {
+            results.innerHTML += '<p>🔄 Probando conexión a API...</p>';
+            
+            const response = await fetch('http://127.0.0.1:3000/api/employees-v2');
+            results.innerHTML += `<p>📡 Response Status: ${response.status}</p>`;
+            
+            if (!response.ok) {
+                results.innerHTML += '<p>❌ Error en response</p>';
+                return;
+            }
+            
+            const employees = await response.json();
+            results.innerHTML += `<p>✅ Empleados cargados: ${employees.length}</p>`;
+            
+            // Mostrar algunos empleados
+            if (employees.length > 0) {
+                results.innerHTML += '<h3>Primeros 3 empleados:</h3>';
+                for (let i = 0; i < Math.min(3, employees.length); i++) {
+                    const emp = employees[i];
+                    results.innerHTML += `<p>ID: ${emp.id} - ${emp.first_name} ${emp.last_name} (${emp.email})</p>`;
+                }
+            }
+            
+        } catch (error) {
+            results.innerHTML += `<p>❌ Error: ${error.message}</p>`;
+        }
+    }
+    
+    // Ejecutar cuando la página se cargue
+    window.addEventListener('load', testEmployees);
+    </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "ERP Afirma",
+  "description": "Sistema completo de gestión empresarial con recursos humanos e inventario",
+  "repository": "https://github.com/tu-usuario/erp-afirma",
+  "keywords": ["erp", "nodejs", "postgresql", "employees"],
+  "addons": [
+    "heroku-postgresql:mini"
+  ],
+  "env": {
+    "NODE_ENV": {
+      "description": "Node environment",
+      "value": "production"
+    },
+    "DB_SSL": {
+      "description": "Use SSL for database connection",
+      "value": "true"
+    }
+  },
+  "scripts": {
+    "postdeploy": "npm run migrate"
+  }
+}

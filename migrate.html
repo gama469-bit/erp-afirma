@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Migration Tool</title>
+    <meta charset="utf-8">
+</head>
+<body>
+    <h2>ERP Migration Tool</h2>
+    <button onclick="runInventoryMigration()">Run Inventory Migration</button>
+    <div id="result"></div>
+
+    <script>
+        async function runInventoryMigration() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Running migration...';
+            
+            try {
+                const response = await fetch('/api/migrate/inventory', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Background -->
+  <rect width="64" height="64" rx="8" fill="#003d82"/>
+  
+  <!-- Geometric shapes representing growth/structure -->
+  <g fill="white" opacity="0.95">
+    <!-- Left column -->
+    <rect x="14" y="24" width="5" height="26" rx="1"/>
+    
+    <!-- Middle column (taller) -->
+    <rect x="24" y="16" width="5" height="34" rx="1"/>
+    
+    <!-- Right column -->
+    <rect x="34" y="26" width="5" height="24" rx="1"/>
+  </g>
+  
+  <!-- Accent line -->
+  <line x1="14" y1="54" x2="44" y2="54" stroke="#0066ff" stroke-width="2" stroke-linecap="round"/>
+</svg>

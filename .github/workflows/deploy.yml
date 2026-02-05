@@ -1,0 +1,69 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: BD_afirma_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run database migrations
+      run: npm run migrate
+      env:
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_NAME: BD_afirma_test
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+    
+    - name: Run tests (when available)
+      run: npm test
+
+  deploy-heroku:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to Heroku
+      uses: akhileshns/heroku-deploy@v3.12.12
+      with:
+        heroku_api_key: ${{secrets.HEROKU_API_KEY}}
+        heroku_app_name: "tu-erp-afirma"
+        heroku_email: "tu-email@example.com"
+        
+    - name: Run migrations on Heroku
+      run: heroku run npm run migrate --app tu-erp-afirma
+      env:
+        HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}

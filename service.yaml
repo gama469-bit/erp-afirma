@@ -1,0 +1,44 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: erp-afirma
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cloudsql-instances: erp-afirma-solutions:us-central1:erp-afirma-db
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      containerConcurrency: 80
+      containers:
+      - image: gcr.io/erp-afirma-solutions/erp-afirma:latest
+        ports:
+        - containerPort: 8080
+          name: http1
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: DB_HOST
+          value: "/cloudsql/erp-afirma-solutions:us-central1:erp-afirma-db"
+        - name: DB_NAME
+          value: "BD_afirma"
+        - name: DB_SSL
+          value: "false"
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+        startupProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+          initialDelaySeconds: 10
+          timeoutSeconds: 10
+      serviceAccountName: "434266349334-compute@developer.gserviceaccount.com"
+      timeoutSeconds: 300
+  traffic:
+  - percent: 100
+    latestRevision: true

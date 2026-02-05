@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test de Pestañas</title>
+    <style>
+        .tab-buttons {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .tab-button.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+        }
+        .tab-button:hover {
+            color: #007bff;
+            background-color: #f8f9fa;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ddd;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test de Pestañas</h1>
+    
+    <div class="tab-buttons">
+        <button type="button" class="tab-button active" data-tab="general">General</button>
+        <button type="button" class="tab-button" data-tab="expediente">Expediente</button>
+        <button type="button" class="tab-button" data-tab="hr">Recursos Humanos</button>
+    </div>
+    
+    <div class="tab-content active" id="tab-general">
+        <h3>Información General</h3>
+        <p>Contenido de la pestaña general</p>
+    </div>
+    
+    <div class="tab-content" id="tab-expediente">
+        <h3>Expediente</h3>
+        <p>Contenido de la pestaña de expediente</p>
+    </div>
+    
+    <div class="tab-content" id="tab-hr">
+        <h3>Recursos Humanos</h3>
+        <p>Contenido de la pestaña de recursos humanos</p>
+    </div>
+    
+    <script>
+        function switchTab(tabName) {
+            console.log('Switching to tab:', tabName);
+            
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+
+            // Remove active class from all tab buttons
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // Show selected tab content
+            const selectedContent = document.getElementById(`tab-${tabName}`);
+            if (selectedContent) {
+                selectedContent.classList.add('active');
+            }
+
+            // Add active class to selected button
+            const selectedButton = document.querySelector(`[data-tab="${tabName}"]`);
+            if (selectedButton) {
+                selectedButton.classList.add('active');
+            }
+        }
+        
+        // Add event listeners
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                const tabName = button.dataset.tab;
+                switchTab(tabName);
+            });
+        });
+        
+        console.log('Test initialized');
+    </script>
+</body>
+</html>
