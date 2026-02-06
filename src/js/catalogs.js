@@ -45,7 +45,11 @@ function openCatalogManager(catalogType) {
     
     const config = catalogConfig[catalogType];
     if (!config) {
-        alert('❌ Tipo de catálogo no encontrado: ' + catalogType);
+        Swal.fire({
+            icon: 'error',
+            title: 'Catálogo no encontrado',
+            text: 'Tipo de catálogo no encontrado: ' + catalogType
+        });
         return;
     }
     
@@ -178,13 +182,21 @@ async function addCatalogElement(event) {
     const itemName = input.value.trim();
     
     if (!itemName) {
-        alert('❌ Por favor ingresa un nombre para el elemento');
+        Swal.fire({
+            icon: 'warning',
+            title: 'Campo requerido',
+            text: 'Por favor ingresa un nombre para el elemento'
+        });
         return;
     }
     
     // Verificar duplicados
     if (currentCatalogItems.some(item => (item.item || item.name || '').toLowerCase() === itemName.toLowerCase())) {
-        alert('⚠️ Este elemento ya existe en la lista');
+        Swal.fire({
+            icon: 'warning',
+            title: 'Elemento duplicado',
+            text: 'Este elemento ya existe en la lista'
+        });
         return;
     }
     
@@ -217,15 +229,28 @@ async function addCatalogElement(event) {
         }
     } catch (error) {
         console.error('❌ Error agregando elemento:', error);
-        alert(`❌ Error al agregar elemento: ${error.message}`);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error al agregar elemento',
+            text: error.message
+        });
     }
 }
 
 // Función para eliminar elemento
 async function deleteCatalogItem(itemId, itemName) {
-    if (!confirm(`¿Estás seguro de eliminar "${itemName}"?\n\n⚠️ Esta acción no se puede deshacer.`)) {
-        return;
-    }
+    const result = await Swal.fire({
+        title: '¿Eliminar elemento?',
+        text: `¿Estás seguro de eliminar "${itemName}"?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6'
+    });
+    
+    if (!result.isConfirmed) return;
     
     console.log('🗑️ Eliminando elemento:', itemId, itemName);
     
@@ -248,7 +273,11 @@ async function deleteCatalogItem(itemId, itemName) {
         }
     } catch (error) {
         console.error('❌ Error eliminando elemento:', error);
-        alert(`❌ Error al eliminar elemento: ${error.message}`);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error al eliminar elemento',
+            text: error.message
+        });
     }
 }
 

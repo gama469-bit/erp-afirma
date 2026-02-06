@@ -8,8 +8,8 @@ let dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'BD_afirma',
-  user: process.env.DB_USER || 'back_afirma',
-  password: process.env.DB_PASSWORD || 'admin',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'Sistemas1',
   ssl: false,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
@@ -79,7 +79,6 @@ async function queryWithRetry(text, params, retries = 3) {
       console.log('✅ Query ejecutada exitosamente');
       return result;
     } catch (err) {
-      console.log('err ----------------')
       console.error(`❌ Error en intento ${attempt}:`, err.message);
       
       if (attempt === retries) {

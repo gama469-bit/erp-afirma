@@ -15,6 +15,7 @@ async function runMigrations() {
       '006_create_employee_relations.sql',
       '007_rename_departments_to_entities.sql',
       '008_create_catalog_tables.sql',
+      '003_create_mastercode.sql',
       '009_create_employee_extended_info.sql',
       '010_update_employees_mastercode.sql',
       '011_fix_foreign_keys.sql',
@@ -27,6 +28,7 @@ async function runMigrations() {
       '018_update_employee_vacations.sql',
       '019_create_projects.sql',
       '020_create_project_assignments.sql',
+      '021_fix_candidates_nullable.sql',
       '021_create_project_indexes.sql',
       '022_create_project_assignment_indexes.sql'
     ];

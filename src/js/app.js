@@ -72,9 +72,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (delBtn) {
             const id = delBtn.dataset.id;
-            if (!confirm('¿Eliminar esta solicitud?')) return;
+            const result = await Swal.fire({
+                title: '¿Eliminar esta solicitud?',
+                text: 'Esta acción no se puede deshacer',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6'
+            });
+            if (!result.isConfirmed) return;
             await fetch((window.getApiUrl ? window.getApiUrl(`/api/vacations/${id}`) : `/api/vacations/${id}`), {
                 method: 'DELETE'
+            });
+            Swal.fire({
+                icon: 'success',
+                title: 'Solicitud eliminada',
+                timer: 2000,
+                showConfirmButton: false
             });
             fetchVacations();
         }
@@ -210,7 +226,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         vacationModal.style.display = 'flex';
     }
 
-    function closeVacationModal() {
+    async function closeVacationModal(skipConfirmation = false) {
+        if (!skipConfirmation) {
+            const result = await Swal.fire({
+                title: '¿Cancelar solicitud?',
+                text: 'Los cambios no guardados se perderán',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, cancelar',
+                cancelButtonText: 'Continuar editando',
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6'
+            });
+            if (!result.isConfirmed) return;
+        }
         vacationModal.style.display = 'none';
         vacationForm.reset();
     }
@@ -228,10 +257,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     addVacationBtn?.addEventListener('click', () => openVacationModal(false));
-    vacationModalClose?.addEventListener('click', closeVacationModal);
-    vacationCancel?.addEventListener('click', closeVacationModal);
-    vacationModal?.addEventListener('click', (e) => {
-        if (e.target === vacationModal) closeVacationModal();
+    vacationModalClose?.addEventListener('click', async () => await closeVacationModal());
+    vacationCancel?.addEventListener('click', async () => await closeVacationModal());
+    vacationModal?.addEventListener('click', async (e) => {
+        if (e.target === vacationModal) await closeVacationModal();
     });
 
     vacationForm?.addEventListener('submit', async (e) => {
@@ -281,7 +310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             const result = await response.json();
             console.log('✅ Success response:', result);
-            closeVacationModal();
+            closeVacationModal(true); // true = skip confirmation
             fetchVacations();
         } catch (err) {
             console.error('❌ Error:', err);
@@ -300,7 +329,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const modalClose = document.getElementById('modal-close');
     const candidateModalClose = document.getElementById('candidate-modal-close');
     const cancelBtn = document.getElementById('employee-cancel');
-    const cancelCandidateBtn = document.getElementById('candidate-cancel');
 
     // Load catalog dropdowns for employee form
     async function loadCatalogDropdowns() {
@@ -438,7 +466,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, delay);
     }
 
-    function closeModal(){
+    async function closeModal(skipConfirmation = false){
+        if (!skipConfirmation) {
+            const result = await Swal.fire({
+                title: '¿Cancelar edición?',
+                text: 'Los cambios no guardados se perderán',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, cancelar',
+                cancelButtonText: 'Continuar editando',
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6'
+            });
+            if (!result.isConfirmed) return;
+        }
         modal.style.display = 'none';
         window.clearInputFields();
     }
@@ -636,19 +677,37 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (view === 'proyectos') {
                 fetchProjects();
             }
+            if (view === 'asignaciones') {
+                if (typeof window.loadAssignments === 'function') {
+                    window.loadAssignments();
+                }
+                if (typeof window.loadAssignmentFilters === 'function') {
+                    window.loadAssignmentFilters();
+                }
+            }
+            if (view === 'reportes') {
+                if (typeof window.loadAllReports === 'function') {
+                    window.loadAllReports();
+                }
+            }
         });
     });
 
     // modal controls
     addBtn.addEventListener('click', async () => await openModal(false));
-    modalClose.addEventListener('click', closeModal);
-    cancelBtn.addEventListener('click', closeModal);
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeModal();
+    modalClose.addEventListener('click', async () => await closeModal());
+    cancelBtn.addEventListener('click', async () => await closeModal());
+    modal.addEventListener('click', async (e) => {
+        if (e.target === modal) await closeModal();
     });
     
     // Prevent modal from closing when clicking inside modal content
+    // BUT allow buttons to work normally
     document.querySelector('#employee-modal .modal-content').addEventListener('click', (e) => {
+        // No bloquear clicks en botones de control
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+            return; // Permitir que el evento se propague
+        }
         e.stopPropagation();
     });
 
@@ -657,15 +716,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // candidate modal controls
     addCandidateBtn.addEventListener('click', () => openCandidateModal(false));
-    candidateModalClose.addEventListener('click', closeCandidateModal);
-    cancelCandidateBtn.addEventListener('click', closeCandidateModal);
-    candidateModal.addEventListener('click', (e) => {
-        if (e.target === candidateModal) closeCandidateModal();
+    candidateModalClose.addEventListener('click', () => {
+        closeCandidateModal();
     });
     
-    // Prevent candidate modal from closing when clicking inside modal content
-    document.querySelector('#candidate-modal .modal-content').addEventListener('click', (e) => {
-        e.stopPropagation();
+    candidateModal.addEventListener('click', (e) => {
+        if (e.target === candidateModal) closeCandidateModal();
     });
 
     async function loadAndRender() {
@@ -794,12 +850,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (id) {
                 result = await window.updateEmployee(id, payload);
                 employeeId = id;
-                alert('Empleado actualizado correctamente.');
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Empleado actualizado',
+                    text: 'Los datos del empleado se actualizaron correctamente',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
                 console.log('✅ Empleado actualizado:', result);
             } else {
                 result = await window.createEmployee(payload);
                 employeeId = result.id;
-                alert('Empleado creado correctamente.');
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Empleado creado',
+                    text: 'El empleado se creó correctamente',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
                 console.log('✅ Empleado creado:', result);
             }
 
@@ -819,9 +887,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                         body: JSON.stringify(bankingData)
                     });
                     if (!bankingRes.ok) throw new Error('Error guardando datos bancarios');
-                    alert('Datos bancarios guardados correctamente.');
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Datos bancarios guardados',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
                 } catch (bankingError) {
-                    alert('Error guardando datos bancarios: ' + (bankingError.message || bankingError));
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error guardando datos bancarios',
+                        text: bankingError.message || bankingError
+                    });
                     console.error('Error saving banking info:', bankingError);
                 }
             }
@@ -850,20 +927,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                         body: JSON.stringify(contractData)
                     });
                     if (!contractRes.ok) throw new Error('Error guardando contrato');
-                    alert('Contrato guardado correctamente.');
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Contrato guardado',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
                 } catch (contractError) {
-                    alert('Error guardando contrato: ' + (contractError.message || contractError));
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error guardando contrato',
+                        text: contractError.message || contractError
+                    });
                     console.error('Error saving contract info:', contractError);
                 }
             }
 
         } catch (err) {
-            alert('Error guardando empleado: ' + (err.message || err));
+            Swal.fire({
+                icon: 'error',
+                title: 'Error guardando empleado',
+                text: err.message || err
+            });
             console.error('❌ Error guardando empleado:', err);
             return;
         }
 
-        closeModal();
+        closeModal(true); // true = skip confirmation
         await loadAndRender();
     });
 
@@ -885,16 +975,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (email) {
             const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             if (!emailRe.test(String(email))) {
-                alert('Formato de email inválido');
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Email inválido',
+                    text: 'Por favor ingresa un formato de email válido'
+                });
                 return;
             }
         }
 
         const payload = { first_name: first, last_name: last, email: email || null, phone: phone || null, position_applied: position, status, notes: notes || null };
-        if (id) {
-            await window.updateCandidate(id, payload);
-        } else {
-            await window.createCandidate(payload);
+        try {
+            if (id) {
+                await window.updateCandidate(id, payload);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Candidato actualizado',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            } else {
+                await window.createCandidate(payload);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Candidato creado',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }
+        } catch (err) {
+            // Error ya manejado en las funciones
+            return;
         }
         closeCandidateModal();
         await loadAndRenderCandidates();
@@ -948,6 +1059,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('📋 Display después del cambio:', getComputedStyle(activeContent).display);
         } else {
             console.error('❌ No se encontró contenido para pestaña:', `#tab-${tabName}`);
+        }
+        
+        // Cargar datos específicos según el tab
+        if (tabName === 'asignaciones') {
+            const employeeId = document.getElementById('employee-id')?.value;
+            if (employeeId && window.loadEmployeeAssignments) {
+                console.log('📊 Cargando asignaciones del empleado:', employeeId);
+                window.loadEmployeeAssignments(employeeId);
+            }
+        } else if (tabName === 'project-assignments') {
+            const projectId = document.getElementById('project-id')?.value;
+            if (projectId && window.loadProjectAssignments) {
+                console.log('📊 Cargando asignaciones del proyecto:', projectId);
+                window.loadProjectAssignments(projectId);
+            }
         }
         
         console.log('✅ switchTab completado para:', tabName);
@@ -1023,6 +1149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const employees = await window.fetchEmployees();
                 const emp = employees.find(x=> String(x.id) === String(id));
                 if (emp) {
+                    if (!confirm('¿Estás seguro de que deseas editar este empleado?')) return;
                     await openModal(true); // Abre el modal y espera catálogos
                     // Espera a que los catálogos estén listos antes de poblar el formulario
                     setTimeout(() => {
@@ -1039,7 +1166,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (del) {
                 const id = del.dataset.id;
-                if (!confirm('¿Eliminar empleado?')) return;
+                const result = await Swal.fire({
+                    title: '¿Eliminar empleado?',
+                    text: 'Esta acción no se puede deshacer',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, eliminar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6'
+                });
+                if (!result.isConfirmed) return;
                 await window.deleteEmployee(id);
                 await loadAndRender();
             }
@@ -1062,7 +1199,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (del) {
             const id = del.dataset.id;
-            if (!confirm('¿Eliminar candidato?')) return;
+            const result = await Swal.fire({
+                title: '¿Eliminar candidato?',
+                text: 'Esta acción no se puede deshacer',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6'
+            });
+            if (!result.isConfirmed) return;
             await window.deleteCandidate(id);
             await loadAndRenderCandidates();
         }
@@ -1071,18 +1218,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ========== TAB EVENT LISTENERS ==========
     // Add event listeners to tab buttons with event delegation
     document.addEventListener('click', (e) => {
-        // Debug: Log todos los clics dentro del modal
-        const modal = e.target.closest('.modal');
-        if (modal && modal.style.display !== 'none') {
-            console.log('👆 Click en modal detectado:', {
-                target: e.target.tagName + (e.target.className ? '.' + e.target.className : ''),
-                isTabButton: e.target.classList.contains('tab-button'),
-                hasDataTab: !!e.target.getAttribute('data-tab'),
-                dataTab: e.target.getAttribute('data-tab'),
-                modalId: modal.id
-            });
-        }
-        
         // Only handle clicks on tab buttons
         if (e.target.matches('.tab-button[data-tab]')) {
             e.preventDefault();
@@ -1113,6 +1248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.loadEmployeeContracts = loadEmployeeContracts;
     window.loadEmployeeBanking = loadEmployeeBanking;
     window.openModal = openModal;
+    window.closeCandidateModal = closeCandidateModal;
     
     // --- PROYECTOS ---
     const addProjectBtn = document.getElementById('add-project-btn');
@@ -1176,16 +1312,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (editBtn) {
             const id = editBtn.dataset.id;
             const proj = allProjects.find(p => String(p.id) === String(id));
-            if (!proj) return alert('No encontrado');
+            if (!proj) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Proyecto no encontrado',
+                    text: 'No se encontró el proyecto seleccionado'
+                });
+                return;
+            }
             openProjectModal(true, proj);
         }
         if (delBtn) {
             const id = delBtn.dataset.id;
-            if (!confirm('¿Eliminar este proyecto?')) return;
-            await fetch((window.getApiUrl ? window.getApiUrl(`/api/projects/${id}`) : `/api/projects/${id}`), {
-                method: 'DELETE'
+            const result = await Swal.fire({
+                title: '¿Eliminar proyecto?',
+                text: 'Esta acción no se puede deshacer. Se eliminarán todas las asignaciones relacionadas.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6'
             });
-            fetchProjects();
+            if (!result.isConfirmed) return;
+            try {
+                const response = await fetch((window.getApiUrl ? window.getApiUrl(`/api/projects/${id}`) : `/api/projects/${id}`), {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error('Error al eliminar proyecto');
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Proyecto eliminado',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                fetchProjects();
+            } catch (err) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error al eliminar proyecto',
+                    text: err.message || err
+                });
+            }
         }
     });
 
@@ -1245,7 +1413,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         projectModal.style.display = 'flex';
     }
 
-    function closeProjectModal() {
+    async function closeProjectModal(skipConfirmation = false) {
+        if (!skipConfirmation) {
+            const result = await Swal.fire({
+                title: '¿Cancelar proyecto?',
+                text: 'Los cambios no guardados se perderán',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, cancelar',
+                cancelButtonText: 'Continuar editando',
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6'
+            });
+            if (!result.isConfirmed) return;
+        }
         projectModal.style.display = 'none';
         projectForm.reset();
     }
@@ -1263,10 +1444,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     addProjectBtn?.addEventListener('click', () => openProjectModal(false));
-    projectModalClose?.addEventListener('click', closeProjectModal);
-    projectCancel?.addEventListener('click', closeProjectModal);
-    projectModal?.addEventListener('click', (e) => {
-        if (e.target === projectModal) closeProjectModal();
+    projectModalClose?.addEventListener('click', async () => await closeProjectModal());
+    projectCancel?.addEventListener('click', async () => await closeProjectModal());
+    projectModal?.addEventListener('click', async (e) => {
+        if (e.target === projectModal) await closeProjectModal();
     });
 
     projectForm?.addEventListener('submit', async (e) => {
@@ -1283,7 +1464,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('📝 Project form data:', { projectId, name, startDate, endDate, status });
 
         if (!name || !startDate || !endDate) {
-            alert('Los campos nombre, fecha inicio y fecha fin son obligatorios');
+            Swal.fire({
+                icon: 'warning',
+                title: 'Campos requeridos',
+                text: 'Los campos nombre, fecha inicio y fecha fin son obligatorios'
+            });
             return;
         }
 
@@ -1313,11 +1498,34 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             const result = await response.json();
             console.log('✅ Success response:', result);
-            closeProjectModal();
+            
+            if (projectId) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Proyecto actualizado',
+                    text: 'Los datos del proyecto se actualizaron correctamente',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Proyecto creado',
+                    text: 'El proyecto se creó correctamente',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }
+            
+            closeProjectModal(true); // true = skip confirmation
             fetchProjects();
         } catch (err) {
             console.error('❌ Error:', err);
-            alert('Error al guardar: ' + err.message);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error al guardar proyecto',
+                text: err.message
+            });
         }
     });
 

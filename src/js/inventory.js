@@ -185,10 +185,33 @@ const InventoryAPI = {
                 })
             });
 
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.json();
+            if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
+            const result = await response.json();
+            
+            if (equipment.id) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Equipo actualizado',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Equipo creado',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }
+            
+            return result;
         } catch (error) {
             console.error('❌ Error guardando equipo:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error al guardar equipo',
+                text: error.message || error
+            });
             throw error;
         }
     },
@@ -648,20 +671,6 @@ function clearEquipmentFilters() {
     renderEquipmentTable();
 }
 
-function editEquipment(id) {
-    console.log(`✏️ Editando equipo ID: ${id}`);
-    if (window.openEquipmentModal) {
-        window.openEquipmentModal(id);
-    }
-}
-
-function deleteEquipment(id) {
-    console.log(`🗑️ Eliminando equipo ID: ${id}`);
-    if (confirm('¿Estás seguro de eliminar este equipo?')) {
-        // Implementar eliminación aquí
-    }
-}
-
 function reloadEquipment() {
     console.log('🔄 Recargando inventario...');
     loadInventoryFromDatabase();
@@ -721,40 +730,105 @@ document.addEventListener('viewChanged', (event) => {
 // FUNCIONES PARA BOTONES DE EDITAR Y ELIMINAR
 // =====================================================
 
-// Función para editar un equipo
-function editEquipment(equipmentId) {
-    console.log('✏️ Editando equipo ID:', equipmentId);
+// Función para abrir el modal de equipos (crear o editar)
+async function openEquipmentModal(equipmentId = null) {
+    console.log('📝 Abriendo modal de equipo, ID:', equipmentId);
     
-    // Buscar el equipo en los datos cargados
-    const equipment = InventoryState.equipmentData.find(eq => eq.id === equipmentId);
+    const modal = document.getElementById('equipment-modal');
+    const modalTitle = document.getElementById('equipment-modal-title');
+    const form = document.getElementById('equipment-form');
     
-    if (!equipment) {
-        console.error('❌ Equipo no encontrado:', equipmentId);
-        alert('Error: Equipo no encontrado');
+    if (!modal || !form) {
+        console.error('❌ Modal o formulario no encontrado');
         return;
     }
     
-    console.log('📝 Datos del equipo a editar:', equipment);
+    // Resetear formulario
+    form.reset();
+    InventoryState.currentEditingId = equipmentId;
     
-    // Mostrar información del equipo
-    const editData = {
-        'ID': equipment.id,
-        'Nombre': equipment.nombre,
-        'Serie': equipment.serie,
-        'Marca': equipment.marca,
-        'Modelo': equipment.modelo,
-        'Categoría': equipment.categoria,
-        'Estado': equipment.estado,
-        'Ubicación': equipment.ubicacion,
-        'Usuario': equipment.usuario_nombre || 'Sin asignar',
-        'Fecha Adquisición': equipment.fecha_adquisicion
-    };
+    // Cargar empleados en el dropdown
+    await loadEmployeesDropdown();
     
-    const editText = Object.entries(editData)
-        .map(([key, value]) => `${key}: ${value || 'N/A'}`)
-        .join('\n');
+    if (equipmentId) {
+        // Modo EDICIÓN
+        modalTitle.textContent = 'Editar Equipo';
         
-    alert(`EDITAR EQUIPO\n\n${editText}\n\n(Funcionalidad de edición en desarrollo)`);
+        // Buscar el equipo en los datos cargados
+        const equipment = InventoryState.equipmentData.find(eq => eq.id === equipmentId);
+        
+        if (!equipment) {
+            console.error('❌ Equipo no encontrado:', equipmentId);
+            Swal.fire({
+                icon: 'error',
+                title: 'Equipo no encontrado',
+                text: 'No se pudo encontrar el equipo seleccionado'
+            });
+            return;
+        }
+        
+        // Llenar el formulario con los datos del equipo
+        document.getElementById('equip-codigo').value = equipment.codigo || '';
+        document.getElementById('equip-nombre').value = equipment.nombre || '';
+        document.getElementById('equip-marca').value = equipment.marca || '';
+        document.getElementById('equip-modelo').value = equipment.modelo || '';
+        document.getElementById('equip-serie').value = equipment.serie || '';
+        document.getElementById('equip-categoria').value = equipment.categoria || '';
+        document.getElementById('equip-ubicacion').value = equipment.ubicacion || '';
+        document.getElementById('equip-asignado').value = equipment.usuario_id || '';
+        document.getElementById('equip-estado').value = equipment.estado || 'Activo';
+        document.getElementById('equip-valor').value = equipment.valor || '';
+        document.getElementById('equip-fecha').value = equipment.fecha_adquisicion ? equipment.fecha_adquisicion.split('T')[0] : '';
+        document.getElementById('equip-observaciones').value = equipment.observaciones || '';
+        
+    } else {
+        // Modo CREAR
+        modalTitle.textContent = 'Agregar Equipo';
+        
+        // Generar código automático
+        const nextCode = `EQ-${Date.now().toString().slice(-6)}`;
+        document.getElementById('equip-codigo').value = nextCode;
+    }
+    
+    modal.style.display = 'flex';
+}
+
+// Función para cargar empleados en el dropdown
+async function loadEmployeesDropdown() {
+    const dropdown = document.getElementById('equip-asignado');
+    if (!dropdown) return;
+    
+    // Limpiar opciones actuales (excepto la primera)
+    dropdown.innerHTML = '<option value="">Sin asignar</option>';
+    
+    try {
+        // Usar empleados ya cargados o cargar nuevos
+        if (InventoryState.employeesData.length === 0) {
+            const response = await fetch(`${INVENTORY_CONFIG.API_BASE}${INVENTORY_CONFIG.ENDPOINTS.EMPLOYEES}`);
+            if (response.ok) {
+                InventoryState.employeesData = await response.json();
+            }
+        }
+        
+        // Agregar opciones de empleados
+        InventoryState.employeesData.forEach(emp => {
+            const option = document.createElement('option');
+            option.value = emp.id;
+            option.textContent = `${emp.nombre} ${emp.apellidos || ''}`.trim();
+            dropdown.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('❌ Error cargando empleados:', error);
+    }
+}
+
+// Función para editar un equipo (llama a openEquipmentModal)
+function editEquipment(equipmentId) {
+    console.log('✏️ Editando equipo ID:', equipmentId);
+    if (window.openEquipmentModal) {
+        window.openEquipmentModal(equipmentId);
+    }
 }
 
 // Función para eliminar un equipo
@@ -767,17 +841,31 @@ async function deleteEquipment(equipmentId) {
         
         if (!equipment) {
             console.error('❌ Equipo no encontrado:', equipmentId);
-            alert('Error: Equipo no encontrado');
+            Swal.fire({
+                icon: 'error',
+                title: 'Equipo no encontrado',
+                text: 'No se pudo encontrar el equipo seleccionado'
+            });
             return;
         }
         
-        // Confirmar eliminación
-        const confirmMessage = `¿Estás seguro de que quieres eliminar este equipo?\n\n` +
-            `Nombre: ${equipment.nombre}\n` +
-            `Serie: ${equipment.serie}\n` +
-            `Marca: ${equipment.marca} ${equipment.modelo}`;
-            
-        if (!confirm(confirmMessage)) {
+        // Confirmar eliminación con SweetAlert2
+        const result = await Swal.fire({
+            title: '¿Eliminar equipo?',
+            html: `<p>¿Estás seguro de que deseas eliminar este equipo?</p>
+                   <p><strong>Nombre:</strong> ${equipment.nombre}</p>
+                   <p><strong>Serie:</strong> ${equipment.serie || 'N/A'}</p>
+                   <p><strong>Marca:</strong> ${equipment.marca || 'N/A'} ${equipment.modelo || ''}</p>
+                   <p style="color: #d33; margin-top: 10px;">⚠️ Esta acción no se puede deshacer.</p>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6'
+        });
+        
+        if (!result.isConfirmed) {
             console.log('❌ Eliminación cancelada por el usuario');
             return;
         }
@@ -796,22 +884,113 @@ async function deleteEquipment(equipmentId) {
             throw new Error(`Error HTTP: ${response.status}`);
         }
         
-        const result = await response.json();
-        console.log('✅ Equipo eliminado exitosamente:', result);
+        const deleteResult = await response.json();
+        console.log('✅ Equipo eliminado exitosamente:', deleteResult);
         
-        alert('Equipo eliminado correctamente');
+        Swal.fire({
+            icon: 'success',
+            title: 'Equipo eliminado',
+            text: 'El equipo se eliminó correctamente',
+            timer: 2000,
+            showConfirmButton: false
+        });
         
         // Recargar la tabla
         await loadInventoryFromDatabase();
         
     } catch (error) {
         console.error('❌ Error al eliminar equipo:', error);
-        alert(`Error al eliminar equipo: ${error.message}`);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error al eliminar equipo',
+            text: error.message
+        });
+    }
+}
+
+// Función para cerrar el modal de equipos
+function closeEquipmentModal() {
+    const modal = document.getElementById('equipment-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        const form = document.getElementById('equipment-form');
+        if (form) form.reset();
     }
 }
 
 // Exponer funciones globalmente para los botones
 window.editEquipment = editEquipment;
 window.deleteEquipment = deleteEquipment;
+window.openEquipmentModal = openEquipmentModal;
+window.closeEquipmentModal = closeEquipmentModal;
+
+// Handler para el formulario de equipos
+document.addEventListener('DOMContentLoaded', () => {
+    const equipmentForm = document.getElementById('equipment-form');
+    if (equipmentForm) {
+        equipmentForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = {
+                codigo: document.getElementById('equip-codigo').value,
+                nombre: document.getElementById('equip-nombre').value,
+                marca: document.getElementById('equip-marca').value || null,
+                modelo: document.getElementById('equip-modelo').value || null,
+                serie: document.getElementById('equip-serie').value || null,
+                categoria: document.getElementById('equip-categoria').value,
+                ubicacion: document.getElementById('equip-ubicacion').value || null,
+                usuario_id: document.getElementById('equip-asignado').value || null,
+                estado: document.getElementById('equip-estado').value,
+                valor: document.getElementById('equip-valor').value || null,
+                fecha_adquisicion: document.getElementById('equip-fecha').value || null,
+                observaciones: document.getElementById('equip-observaciones').value || null
+            };
+            
+            try {
+                const url = InventoryState.currentEditingId 
+                    ? `${INVENTORY_CONFIG.API_BASE}/inventory/${InventoryState.currentEditingId}`
+                    : `${INVENTORY_CONFIG.API_BASE}/inventory`;
+                
+                const method = InventoryState.currentEditingId ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: InventoryState.currentEditingId ? 'Equipo actualizado' : 'Equipo creado',
+                    text: 'Los cambios se guardaron correctamente',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                
+                // Cerrar modal
+                const modal = document.getElementById('equipment-modal');
+                if (modal) modal.style.display = 'none';
+                equipmentForm.reset();
+                
+                // Recargar tabla
+                await loadInventoryFromDatabase();
+                
+            } catch (error) {
+                console.error('❌ Error guardando equipo:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error al guardar',
+                    text: error.message
+                });
+            }
+        });
+    }
+});
 
 console.log('📦 Sistema de inventario simplificado listo');

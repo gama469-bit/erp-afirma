@@ -5,6 +5,8 @@ const db = require('./db');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const path = require('path');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 
 const app = express();
 const PORT = process.env.API_PORT || 3000;
@@ -19,7 +21,7 @@ app.use((req, res, next) => {
   }
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   
   if (req.method === 'OPTIONS') {
     if (!req.url.includes('/health')) {
@@ -30,6 +32,47 @@ app.use((req, res, next) => {
   
   next();
 });
+
+// JWT Configuration
+const JWT_SECRET = process.env.JWT_SECRET || 'erp-afirma-secret-key-change-in-production';
+const JWT_EXPIRES_IN = '24h';
+
+// Authentication Middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ error: 'Token de autenticación requerido' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Token inválido o expirado' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// Authorization Middleware - Check user has required role
+const authorizeRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+    
+    if (!allowedRoles.includes(req.user.role_name)) {
+      return res.status(403).json({ 
+        error: 'No tienes permisos para realizar esta acción',
+        required_roles: allowedRoles,
+        your_role: req.user.role_name
+      });
+    }
+    
+    next();
+  };
+};
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
@@ -150,10 +193,239 @@ function isFutureDate(dateStr) {
 // Health
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
+// ========== AUTHENTICATION ENDPOINTS ==========
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y contraseña son requeridos' });
+    }
+
+    // Find user by email
+    const userQuery = `
+      SELECT u.*, r.name as role_name, r.permissions 
+      FROM users u
+      LEFT JOIN roles r ON u.role_id = r.id
+      WHERE u.email = $1 AND u.status = 'Activo'
+    `;
+    const result = await db.query(userQuery, [email]);
+
+    if (result.rowCount === 0) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const user = result.rows[0];
+
+    // Verify password
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    // Update last login
+    await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+
+    // Generate JWT
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        role_id: user.role_id,
+        role_name: user.role_name,
+        permissions: user.permissions
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    // Return user info (without password hash)
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        role_id: user.role_id,
+        role_name: user.role_name,
+        permissions: user.permissions,
+        employee_id: user.employee_id
+      }
+    });
+  } catch (error) {
+    console.error('Error en login:', error);
+    res.status(500).json({ error: 'Error al iniciar sesión' });
+  }
+});
+
+// Register new user (Admin only)
+app.post('/api/auth/register', authenticateToken, authorizeRoles('Administrador'), async (req, res) => {
+  try {
+    const { email, password, first_name, last_name, role_id, employee_id } = req.body;
+
+    if (!email || !password || !first_name || !last_name || !role_id) {
+      return res.status(400).json({ 
+        error: 'Email, contraseña, nombre, apellido y rol son requeridos' 
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await db.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existingUser.rowCount > 0) {
+      return res.status(409).json({ error: 'El email ya está registrado' });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const password_hash = await bcrypt.hash(password, saltRounds);
+
+    // Create user
+    const insertQuery = `
+      INSERT INTO users (email, password_hash, first_name, last_name, role_id, employee_id, status)
+      VALUES ($1, $2, $3, $4, $5, $6, 'Activo')
+      RETURNING id, email, first_name, last_name, role_id, employee_id, status, created_at
+    `;
+    const result = await db.query(insertQuery, [
+      email,
+      password_hash,
+      first_name,
+      last_name,
+      role_id,
+      employee_id || null
+    ]);
+
+    res.status(201).json({
+      message: 'Usuario creado exitosamente',
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error al registrar usuario:', error);
+    res.status(500).json({ error: 'Error al crear usuario' });
+  }
+});
+
+// Get current user info
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const userQuery = `
+      SELECT u.id, u.email, u.first_name, u.last_name, u.role_id, u.employee_id, 
+             u.status, u.last_login, r.name as role_name, r.permissions
+      FROM users u
+      LEFT JOIN roles r ON u.role_id = r.id
+      WHERE u.id = $1
+    `;
+    const result = await db.query(userQuery, [req.user.id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error al obtener usuario:', error);
+    res.status(500).json({ error: 'Error al obtener información del usuario' });
+  }
+});
+
+// Logout (client-side only, just for logging)
+app.post('/api/auth/logout', authenticateToken, (req, res) => {
+  console.log(`🔓 Usuario ${req.user.email} cerró sesión`);
+  res.json({ message: 'Sesión cerrada exitosamente' });
+});
+
+// Get all users (Admin only)
+app.get('/api/auth/users', authenticateToken, authorizeRoles('Administrador'), async (req, res) => {
+  try {
+    const query = `
+      SELECT u.id, u.email, u.first_name, u.last_name, u.role_id, u.employee_id,
+             u.status, u.last_login, u.created_at, r.name as role_name
+      FROM users u
+      LEFT JOIN roles r ON u.role_id = r.id
+      ORDER BY u.created_at DESC
+    `;
+    const result = await db.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error al obtener usuarios:', error);
+    res.status(500).json({ error: 'Error al obtener usuarios' });
+  }
+});
+
+// Update user (Admin only)
+app.put('/api/auth/users/:id', authenticateToken, authorizeRoles('Administrador'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, first_name, last_name, role_id, employee_id, status } = req.body;
+
+    const updateQuery = `
+      UPDATE users 
+      SET email = COALESCE($1, email),
+          first_name = COALESCE($2, first_name),
+          last_name = COALESCE($3, last_name),
+          role_id = COALESCE($4, role_id),
+          employee_id = COALESCE($5, employee_id),
+          status = COALESCE($6, status)
+      WHERE id = $7
+      RETURNING id, email, first_name, last_name, role_id, employee_id, status
+    `;
+    
+    const result = await db.query(updateQuery, [email, first_name, last_name, role_id, employee_id, status, id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    res.json({
+      message: 'Usuario actualizado exitosamente',
+      user: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error al actualizar usuario:', error);
+    res.status(500).json({ error: 'Error al actualizar usuario' });
+  }
+});
+
+// Delete user (Admin only)
+app.delete('/api/auth/users/:id', authenticateToken, authorizeRoles('Administrador'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Don't allow deleting yourself
+    if (parseInt(id) === req.user.id) {
+      return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta' });
+    }
+
+    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    res.json({ message: 'Usuario eliminado exitosamente' });
+  } catch (error) {
+    console.error('Error al eliminar usuario:', error);
+    res.status(500).json({ error: 'Error al eliminar usuario' });
+  }
+});
+
+// Get all roles
+app.get('/api/auth/roles', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM roles ORDER BY id');
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error al obtener roles:', error);
+    res.status(500).json({ error: 'Error al obtener roles' });
+  }
+});
+
 // ========== CANDIDATES ENDPOINTS ==========
 
 // List candidates
-app.get('/candidates', async (req, res) => {
+app.get('/api/candidates', async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM candidates ORDER BY id DESC');
     res.json(result.rows);
@@ -164,7 +436,7 @@ app.get('/candidates', async (req, res) => {
 });
 
 // Create candidate
-app.post('/candidates', async (req, res) => {
+app.post('/api/candidates', async (req, res) => {
   let { first_name, last_name, email, phone, position_applied, status, notes, name } = req.body;
 
   if (!first_name && name) {
@@ -176,7 +448,7 @@ app.post('/candidates', async (req, res) => {
   if (!email) {
     const base = (first_name || 'candidate').toLowerCase().replace(/[^a-z0-9]+/g, '') || 'candidate';
     const suffix = Date.now();
-    email = `${base}${suffix}@local`;
+    email = `${base}${suffix}@temp.local`;
   }
 
   // validate email if provided
@@ -201,7 +473,7 @@ app.post('/candidates', async (req, res) => {
 });
 
 // Update candidate
-app.put('/candidates/:id', async (req, res) => {
+app.put('/api/candidates/:id', async (req, res) => {
   const id = req.params.id;
   const { first_name, last_name, email, phone, position_applied, status, notes } = req.body;
   
@@ -227,7 +499,7 @@ app.put('/candidates/:id', async (req, res) => {
 });
 
 // Delete candidate
-app.delete('/candidates/:id', async (req, res) => {
+app.delete('/api/candidates/:id', async (req, res) => {
   const id = req.params.id;
   try {
     const result = await db.query('DELETE FROM candidates WHERE id = $1', [id]);
@@ -240,7 +512,7 @@ app.delete('/candidates/:id', async (req, res) => {
 });
 
 // Upload and parse Excel file for employees
-app.post('/upload-employees', upload.single('file'), async (req, res) => {
+app.post('/api/upload-employees', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -464,7 +736,7 @@ app.post('/upload-employees', upload.single('file'), async (req, res) => {
 });
 
 // Upload and parse Excel file for candidates
-app.post('/upload-candidates', upload.single('file'), async (req, res) => {
+app.post('/api/upload-candidates', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -813,57 +1085,6 @@ app.delete('/api/areas/:id', async (req, res) => {
   } catch (err) {
     console.error('Error deleting area', err);
     res.status(500).json({ error: 'Error deleting area' });
-  }
-});
-
-// === PROYECTOS ===
-app.get('/api/projects', async (req, res) => {
-  try {
-    const r = await db.query("SELECT id, item as name FROM mastercode WHERE lista = 'Proyecto' ORDER BY item");
-    res.json(r.rows);
-  } catch (err) {
-    console.error('Error fetching projects', err);
-    res.status(500).json({ error: 'Error fetching projects' });
-  }
-});
-app.post('/api/projects', async (req, res) => {
-  const { name } = req.body;
-  try {
-    const r = await db.query("INSERT INTO mastercode (lista, item) VALUES ('Proyecto', $1) RETURNING id, item as name", [name]);
-    res.status(201).json(r.rows[0]);
-  } catch (err) {
-    console.error('Error creating project', err);
-    res.status(500).json({ error: 'Error creating project' });
-  }
-});
-
-// Update project
-app.put('/api/projects/:id', async (req, res) => {
-  const id = req.params.id;
-  const { name } = req.body;
-  try {
-    const r = await db.query(
-      "UPDATE mastercode SET item = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND lista = 'Proyecto' RETURNING id, item as name",
-      [name, id]
-    );
-    if (r.rowCount === 0) return res.status(404).json({ error: 'Project not found' });
-    res.json(r.rows[0]);
-  } catch (err) {
-    console.error('Error updating project', err);
-    res.status(500).json({ error: 'Error updating project' });
-  }
-});
-
-// Delete project
-app.delete('/api/projects/:id', async (req, res) => {
-  const id = req.params.id;
-  try {
-    const r = await db.query("DELETE FROM mastercode WHERE id = $1 AND lista = 'Proyecto'", [id]);
-    if (r.rowCount === 0) return res.status(404).json({ error: 'Project not found' });
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error deleting project', err);
-    res.status(500).json({ error: 'Error deleting project' });
   }
 });
 
@@ -1733,10 +1954,10 @@ app.delete('/api/vacations/:id', async (req, res) => {
 app.get('/api/projects', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT p.id, p.name, p.description, p.start_date, p.end_date, p.status, p.manager_id, 
-              e.first_name, e.last_name, p.created_at
+      `SELECT p.id, p.name, p.area_id, p.description, p.created_at,
+              mc.item as area_name
        FROM projects p
-       LEFT JOIN employees_v2 e ON p.manager_id = e.id
+       LEFT JOIN mastercode mc ON p.area_id = mc.id AND mc.lista = 'Areas'
        ORDER BY p.created_at DESC`
     );
     res.json(result.rows);
@@ -1746,15 +1967,84 @@ app.get('/api/projects', async (req, res) => {
   }
 });
 
+// Get all project assignments (for general assignments view) - MUST BE BEFORE /:id route
+app.get('/api/projects/assignments', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated,
+              e.first_name, e.last_name, e.email, e.employee_code,
+              p.name as project_name,
+              mc_position.item as position,
+              mc_area.item as area,
+              mc_entity.item as entity,
+              CASE 
+                WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE THEN true
+                ELSE false
+              END as is_active,
+              CASE
+                WHEN pa.end_date IS NULL THEN 'Sin fecha fin'
+                WHEN pa.end_date >= CURRENT_DATE THEN 'Activo'
+                ELSE 'Finalizado'
+              END as status
+       FROM project_assignments pa
+       INNER JOIN employees_v2 e ON pa.employee_id = e.id
+       INNER JOIN projects p ON pa.project_id = p.id
+       LEFT JOIN mastercode mc_position ON e.position_id = mc_position.id
+       LEFT JOIN mastercode mc_area ON e.area_id = mc_area.id
+       LEFT JOIN mastercode mc_entity ON e.entity_id = mc_entity.id
+       ORDER BY pa.start_date DESC, e.first_name, e.last_name`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching all assignments:', err);
+    res.status(500).json({ error: 'Error fetching assignments' });
+  }
+});
+
+// Get project assignments for specific project - MUST BE BEFORE /:id route
+app.get('/api/projects/:id/assignments', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated,
+              e.first_name, e.last_name, e.email, e.employee_code,
+              mc_position.item as position,
+              mc_area.item as area,
+              mc_entity.item as entity,
+              CASE 
+                WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE THEN true
+                ELSE false
+              END as is_active,
+              CASE
+                WHEN pa.end_date IS NULL THEN 'Sin fecha fin'
+                WHEN pa.end_date >= CURRENT_DATE THEN 'Activo'
+                ELSE 'Finalizado'
+              END as status
+       FROM project_assignments pa
+       INNER JOIN employees_v2 e ON pa.employee_id = e.id
+       LEFT JOIN mastercode mc_position ON e.position_id = mc_position.id
+       LEFT JOIN mastercode mc_area ON e.area_id = mc_area.id
+       LEFT JOIN mastercode mc_entity ON e.entity_id = mc_entity.id
+       WHERE pa.project_id = $1
+       ORDER BY pa.start_date DESC, e.first_name, e.last_name`,
+      [id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching project assignments:', err);
+    res.status(500).json({ error: 'Error fetching project assignments' });
+  }
+});
+
 // Get single project
 app.get('/api/projects/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(
-      `SELECT p.id, p.name, p.description, p.start_date, p.end_date, p.status, p.manager_id, 
-              e.first_name, e.last_name, p.created_at
+      `SELECT p.id, p.name, p.area_id, p.description, p.created_at,
+              mc.item as area_name
        FROM projects p
-       LEFT JOIN employees_v2 e ON p.manager_id = e.id
+       LEFT JOIN mastercode mc ON p.area_id = mc.id AND mc.lista = 'Areas'
        WHERE p.id = $1`,
       [id]
     );
@@ -1770,18 +2060,18 @@ app.get('/api/projects/:id', async (req, res) => {
 
 // Create project
 app.post('/api/projects', async (req, res) => {
-  const { name, description, start_date, end_date, status, manager_id } = req.body;
+  const { name, description, area_id } = req.body;
   
-  if (!name || !start_date || !end_date) {
-    return res.status(400).json({ error: 'Required fields: name, start_date, end_date' });
+  if (!name) {
+    return res.status(400).json({ error: 'Required field: name' });
   }
   
   try {
     const result = await db.query(
-      `INSERT INTO projects (name, description, start_date, end_date, status, manager_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, name, description, start_date, end_date, status, manager_id, created_at`,
-      [name, description || null, start_date, end_date, status || 'Planificación', manager_id || null]
+      `INSERT INTO projects (name, area_id, description)
+       VALUES ($1, $2, $3)
+       RETURNING id, name, area_id, description, created_at`,
+      [name, area_id || null, description || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1793,21 +2083,17 @@ app.post('/api/projects', async (req, res) => {
 // Update project
 app.put('/api/projects/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, description, start_date, end_date, status, manager_id } = req.body;
+  const { name, description, area_id } = req.body;
   
   try {
     const result = await db.query(
       `UPDATE projects 
        SET name = COALESCE($1, name), 
-           description = COALESCE($2, description), 
-           start_date = COALESCE($3, start_date), 
-           end_date = COALESCE($4, end_date), 
-           status = COALESCE($5, status), 
-           manager_id = COALESCE($6, manager_id),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7
-       RETURNING id, name, description, start_date, end_date, status, manager_id, created_at`,
-      [name || null, description || null, start_date || null, end_date || null, status || null, manager_id || null, id]
+           area_id = COALESCE($2, area_id), 
+           description = COALESCE($3, description)
+       WHERE id = $4
+       RETURNING id, name, area_id, description, created_at`,
+      [name || null, area_id || null, description || null, id]
     );
     
     if (result.rowCount === 0) {
@@ -1838,26 +2124,6 @@ app.delete('/api/projects/:id', async (req, res) => {
   }
 });
 
-// Get project assignments
-app.get('/api/projects/:id/assignments', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await db.query(
-      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated,
-              e.first_name, e.last_name, e.email
-       FROM project_assignments pa
-       JOIN employees_v2 e ON pa.employee_id = e.id
-       WHERE pa.project_id = $1
-       ORDER BY e.first_name, e.last_name`,
-      [id]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error fetching project assignments:', err);
-    res.status(500).json({ error: 'Error fetching project assignments' });
-  }
-});
-
 // Add employee to project
 app.post('/api/projects/:id/assignments', async (req, res) => {
   const { id } = req.params;
@@ -1868,6 +2134,32 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
   }
   
   try {
+    // VALIDACIÓN: Verificar que el empleado no tenga asignaciones activas
+    const activeAssignments = await db.query(
+      `SELECT pa.id, p.name as project_name, pa.start_date, pa.end_date
+       FROM project_assignments pa
+       INNER JOIN projects p ON pa.project_id = p.id
+       WHERE pa.employee_id = $1 
+       AND (pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE)`,
+      [employee_id]
+    );
+    
+    if (activeAssignments.rowCount > 0) {
+      const activeProject = activeAssignments.rows[0];
+      return res.status(409).json({ 
+        error: 'El empleado ya tiene una asignación activa',
+        details: {
+          message: `El empleado ya está asignado al proyecto "${activeProject.project_name}"`,
+          conflicting_assignment: {
+            project_name: activeProject.project_name,
+            start_date: activeProject.start_date,
+            end_date: activeProject.end_date
+          }
+        }
+      });
+    }
+    
+    // Si no hay conflictos, proceder con la asignación
     const result = await db.query(
       `INSERT INTO project_assignments (project_id, employee_id, role, start_date, end_date, hours_allocated)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -1878,6 +2170,34 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
   } catch (err) {
     console.error('Error creating project assignment:', err);
     res.status(500).json({ error: 'Error creating project assignment' });
+  }
+});
+
+// Update project assignment
+app.put('/api/projects/assignments/:assignmentId', async (req, res) => {
+  const { assignmentId } = req.params;
+  const { role, start_date, end_date, hours_allocated } = req.body;
+  
+  try {
+    const result = await db.query(
+      `UPDATE project_assignments 
+       SET role = COALESCE($1, role),
+           start_date = COALESCE($2, start_date),
+           end_date = COALESCE($3, end_date),
+           hours_allocated = COALESCE($4, hours_allocated)
+       WHERE id = $5
+       RETURNING *`,
+      [role, start_date, end_date, hours_allocated, assignmentId]
+    );
+    
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating assignment:', err);
+    res.status(500).json({ error: 'Error updating assignment' });
   }
 });
 
@@ -1895,6 +2215,264 @@ app.delete('/api/projects/:projectId/assignments/:assignmentId', async (req, res
   } catch (err) {
     console.error('Error deleting assignment:', err);
     res.status(500).json({ error: 'Error deleting assignment' });
+  }
+});
+
+// Get assignments by employee (project history)
+app.get('/api/employees/:id/assignments', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT 
+        pa.id,
+        pa.project_id,
+        p.name as project_name,
+        p.description as project_description,
+        p.status as project_status,
+        pa.role as role_in_project,
+        pa.start_date,
+        pa.end_date,
+        pa.hours_allocated,
+        CASE 
+          WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE THEN true 
+          ELSE false 
+        END as is_active,
+        pa.created_at
+      FROM project_assignments pa
+      INNER JOIN projects p ON pa.project_id = p.id
+      WHERE pa.employee_id = $1
+      ORDER BY pa.start_date DESC`,
+      [id]
+    );
+    
+    // Calculate summary
+    const activeAssignments = result.rows.filter(a => a.is_active);
+    const completedAssignments = result.rows.filter(a => !a.is_active);
+    const totalHours = result.rows.reduce((sum, a) => sum + (parseFloat(a.hours_allocated) || 0), 0);
+    const activeHours = activeAssignments.reduce((sum, a) => sum + (parseFloat(a.hours_allocated) || 0), 0);
+    
+    res.json({
+      assignments: result.rows,
+      summary: {
+        total_projects: result.rows.length,
+        active_projects: activeAssignments.length,
+        completed_projects: completedAssignments.length,
+        total_hours_allocated: totalHours,
+        active_hours: activeHours,
+        average_hours_per_week: result.rows.length > 0 ? (totalHours / result.rows.length).toFixed(2) : 0
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching employee assignments:', err);
+    res.status(500).json({ error: 'Error fetching employee assignments' });
+  }
+});
+
+// Get unassigned employees (resources on bench)
+app.get('/api/employees/unassigned', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT 
+        e.id,
+        CONCAT(e.first_name, ' ', e.last_name) as nombre_completo,
+        e.email,
+        e.status,
+        pos.item as position_name,
+        area.item as area_name,
+        ent.item as entity_name,
+        MAX(pa.end_date) as last_assignment_end,
+        CASE 
+          WHEN MAX(pa.end_date) IS NOT NULL 
+          THEN CURRENT_DATE - MAX(pa.end_date) 
+          ELSE NULL 
+        END as days_without_project
+      FROM employees_v2 e
+      LEFT JOIN mastercode pos ON e.position_id = pos.id
+      LEFT JOIN mastercode area ON e.area_id = area.id
+      LEFT JOIN mastercode ent ON e.entity_id = ent.id
+      LEFT JOIN project_assignments pa ON e.id = pa.employee_id
+      WHERE e.status = 'Activo'
+      GROUP BY e.id, e.first_name, e.last_name, e.email, e.status, pos.item, area.item, ent.item
+      HAVING COUNT(CASE 
+        WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
+        THEN 1 
+      END) = 0
+      ORDER BY last_assignment_end DESC NULLS LAST`,
+      []
+    );
+    
+    res.json({
+      bench_resources: result.rows,
+      total_available: result.rows.length
+    });
+  } catch (err) {
+    console.error('Error fetching unassigned employees:', err);
+    res.status(500).json({ error: 'Error fetching unassigned employees' });
+  }
+});
+
+// ========== REPORTES ==========
+
+// Reporte: Recursos agrupados por Proyecto
+app.get('/api/reports/resources-by-project', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT 
+        p.id as project_id,
+        p.name as project_name,
+        p.area_id,
+        mc_area.item as area_name,
+        COUNT(DISTINCT pa.employee_id) as total_resources,
+        COUNT(DISTINCT CASE 
+          WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
+          THEN pa.employee_id 
+        END) as active_resources,
+        COALESCE(SUM(CASE 
+          WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
+          THEN pa.hours_allocated 
+        END), 0) as total_active_hours,
+        json_agg(
+          json_build_object(
+            'employee_id', e.id,
+            'employee_name', e.first_name || ' ' || e.last_name,
+            'position', mc_position.item,
+            'role', pa.role,
+            'start_date', pa.start_date,
+            'end_date', pa.end_date,
+            'hours_allocated', pa.hours_allocated,
+            'is_active', CASE 
+              WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
+              THEN true 
+              ELSE false 
+            END
+          ) ORDER BY pa.start_date DESC
+        ) as resources
+       FROM projects p
+       LEFT JOIN mastercode mc_area ON p.area_id = mc_area.id AND mc_area.lista = 'Areas'
+       LEFT JOIN project_assignments pa ON p.id = pa.project_id
+       LEFT JOIN employees_v2 e ON pa.employee_id = e.id
+       LEFT JOIN mastercode mc_position ON e.position_id = mc_position.id
+       GROUP BY p.id, p.name, p.area_id, mc_area.item
+       ORDER BY p.name`
+    );
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching resources by project report:', err);
+    res.status(500).json({ error: 'Error generating report' });
+  }
+});
+
+// Reporte: Proyectos agrupados por Recurso
+app.get('/api/reports/projects-by-resource', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT 
+        e.id as employee_id,
+        e.first_name || ' ' || e.last_name as employee_name,
+        e.employee_code,
+        mc_position.item as position,
+        mc_area.item as area,
+        mc_entity.item as entity,
+        e.status as employee_status,
+        COUNT(DISTINCT pa.project_id) as total_projects,
+        COUNT(DISTINCT CASE 
+          WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
+          THEN pa.project_id 
+        END) as active_projects,
+        COALESCE(SUM(CASE 
+          WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
+          THEN pa.hours_allocated 
+        END), 0) as total_active_hours,
+        json_agg(
+          json_build_object(
+            'project_id', p.id,
+            'project_name', p.name,
+            'role', pa.role,
+            'start_date', pa.start_date,
+            'end_date', pa.end_date,
+            'hours_allocated', pa.hours_allocated,
+            'is_active', CASE 
+              WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
+              THEN true 
+              ELSE false 
+            END
+          ) ORDER BY pa.start_date DESC
+        ) FILTER (WHERE pa.id IS NOT NULL) as projects
+       FROM employees_v2 e
+       LEFT JOIN project_assignments pa ON e.id = pa.employee_id
+       LEFT JOIN projects p ON pa.project_id = p.id
+       LEFT JOIN mastercode mc_position ON e.position_id = mc_position.id
+       LEFT JOIN mastercode mc_area ON e.area_id = mc_area.id
+       LEFT JOIN mastercode mc_entity ON e.entity_id = mc_entity.id
+       WHERE e.status = 'Activo'
+       GROUP BY e.id, e.first_name, e.last_name, e.employee_code, 
+                mc_position.item, mc_area.item, mc_entity.item, e.status
+       ORDER BY employee_name`
+    );
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching projects by resource report:', err);
+    res.status(500).json({ error: 'Error generating report' });
+  }
+});
+
+// Reporte: Resumen general de asignaciones
+app.get('/api/reports/assignment-summary', async (req, res) => {
+  try {
+    const summary = await db.query(
+      `SELECT 
+        (SELECT COUNT(*) FROM employees_v2 WHERE status = 'Activo') as total_active_employees,
+        (SELECT COUNT(*) FROM projects) as total_active_projects,
+        (SELECT COUNT(DISTINCT employee_id) FROM project_assignments 
+         WHERE end_date IS NULL OR end_date >= CURRENT_DATE) as employees_with_active_assignments,
+        (SELECT COUNT(DISTINCT project_id) FROM project_assignments 
+         WHERE end_date IS NULL OR end_date >= CURRENT_DATE) as projects_with_active_assignments,
+        (SELECT COUNT(*) FROM employees_v2 e
+         WHERE e.status = 'Activo' 
+         AND NOT EXISTS (
+           SELECT 1 FROM project_assignments pa 
+           WHERE pa.employee_id = e.id 
+           AND (pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE)
+         )) as employees_in_bench,
+        (SELECT COALESCE(SUM(hours_allocated), 0) FROM project_assignments
+         WHERE end_date IS NULL OR end_date >= CURRENT_DATE) as total_active_hours`
+    );
+    
+    // Proyectos con más recursos
+    const topProjects = await db.query(
+      `SELECT p.name, COUNT(DISTINCT pa.employee_id) as resource_count
+       FROM projects p
+       INNER JOIN project_assignments pa ON p.id = pa.project_id
+       WHERE pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE
+       GROUP BY p.id, p.name
+       ORDER BY resource_count DESC
+       LIMIT 5`
+    );
+    
+    // Recursos más activos
+    const topResources = await db.query(
+      `SELECT 
+        e.first_name || ' ' || e.last_name as employee_name,
+        COUNT(DISTINCT pa.project_id) as project_count,
+        COALESCE(SUM(pa.hours_allocated), 0) as total_hours
+       FROM employees_v2 e
+       INNER JOIN project_assignments pa ON e.id = pa.employee_id
+       WHERE pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE
+       GROUP BY e.id, e.first_name, e.last_name
+       ORDER BY total_hours DESC
+       LIMIT 5`
+    );
+    
+    res.json({
+      summary: summary.rows[0],
+      top_projects: topProjects.rows,
+      top_resources: topResources.rows
+    });
+  } catch (err) {
+    console.error('Error fetching assignment summary:', err);
+    res.status(500).json({ error: 'Error generating summary' });
   }
 });
 

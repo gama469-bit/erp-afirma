@@ -85,8 +85,21 @@
             background-color: #f8f9fa;
         }
     </style>
+    
+    <!-- SweetAlert2 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
+    <!-- Authentication Guard -->
+    <script src="js/auth.js"></script>
+    <script>
+        // Require authentication to access this page
+        if (!requireAuth()) {
+            // Will redirect to login if not authenticated
+        }
+    </script>
+
     <!-- topbar + shell to match a modern ERP look -->
     <header class="topbar">
         <div class="topbar-inner">
@@ -94,8 +107,8 @@
                 <img src="assets/logo.png" alt="logo" class="topbar-logo">
                 <div class="topbar-title">ERP AFIRMA</div>
             </div>
-            <div class="topbar-right">
-                <div class="user-pill">Gary Vazquez</div>
+            <div class="topbar-right" id="user-info">
+                <div class="user-pill">Cargando...</div>
             </div>
         </div>
     </header>
@@ -117,6 +130,8 @@
                 <a href="#" data-view="inventario-equipos">Inventario de Equipos</a>
                 <a href="#" data-view="vacaciones">Vacaciones</a>
                 <a href="#" data-view="proyectos">Proyectos</a>
+                <a href="#" data-view="asignaciones">Asignaciones</a>
+                <a href="#" data-view="reportes">Reportes</a>
                 <a href="#" data-view="catalogos">Catálogos</a>
             </nav>
 
@@ -458,12 +473,22 @@
 
             <!-- Modal para proyectos -->
             <div id="project-modal" class="modal" style="display:none;">
-                <div class="modal-content">
+                <div class="modal-content" style="max-width:900px">
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:20px;border-bottom:1px solid #e5e7eb;">
                         <h2 id="project-modal-title" style="margin:0">Nuevo Proyecto</h2>
                         <button type="button" id="project-modal-close" style="background:none;border:none;font-size:24px;cursor:pointer;">✕</button>
                     </div>
+                    
+                    <!-- Pestañas -->
+                    <div class="tab-container">
+                        <div class="tab-buttons">
+                            <button type="button" class="tab-button active" data-tab="project-general">Datos Generales</button>
+                            <button type="button" class="tab-button" data-tab="project-assignments">Asignaciones</button>
+                        </div>
+                    
                     <form id="project-form" style="padding:24px;">
+                        <!-- Pestaña: Datos Generales -->
+                        <div class="tab-content active" id="tab-project-general">
                         <input type="hidden" id="project-id">
                         
                         <div style="margin-bottom:20px;">
@@ -508,9 +533,317 @@
                             <button type="button" id="project-cancel" class="btn-secondary">Cancelar</button>
                             <button type="submit" id="project-submit" class="btn-primary">Guardar Proyecto</button>
                         </div>
+                        </div>
+                        
+                        <!-- Pestaña: Asignaciones -->
+                        <div class="tab-content" id="tab-project-assignments">
+                            <div style="padding:24px">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                                    <h4 style="margin:0">Recursos Asignados</h4>
+                                    <button type="button" id="project-add-assignment" class="btn-primary" style="padding:8px 16px;font-size:14px">+ Asignar Recurso</button>
+                                </div>
+                                
+                                <div id="project-assignments-loading" style="text-align:center;padding:20px;color:#666;display:none">
+                                    Cargando asignaciones...
+                                </div>
+                                <div id="project-assignments-empty" style="text-align:center;padding:20px;color:#999;display:none">
+                                    <div style="font-size:32px;margin-bottom:10px">👥</div>
+                                    <div>No hay recursos asignados a este proyecto</div>
+                                    <button type="button" onclick="document.getElementById('project-add-assignment').click()" style="margin-top:12px;background:#007bff;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer">Asignar Primer Recurso</button>
+                                </div>
+                                <table class="employee-table" id="project-assignments-table" style="display:none;width:100%">
+                                    <thead>
+                                        <tr>
+                                            <th>👤 Empleado</th>
+                                            <th>💼 Puesto</th>
+                                            <th>🎯 Rol</th>
+                                            <th>📅 Inicio</th>
+                                            <th>📅 Fin</th>
+                                            <th>⏰ Horas</th>
+                                            <th>📊 Estado</th>
+                                            <th>⚙️ Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="project-assignments-tbody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Nueva sección: Asignaciones de Recursos a Proyectos -->
+            <section id="asignaciones" class="card view" style="display:none;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                    <h2 style="margin:0">Asignaciones de Recursos</h2>
+                    <button type="button" id="add-assignment-btn" class="btn-add">+ Nueva Asignación</button>
+                </div>
+                
+                <!-- Filtros -->
+                <div class="filters-container">
+                    <select id="filter-assignment-employee" class="filter-input" style="width:250px">
+                        <option value="">👤 Todos los empleados</option>
+                    </select>
+                    <select id="filter-assignment-project" class="filter-input" style="width:250px">
+                        <option value="">📋 Todos los proyectos</option>
+                    </select>
+                    <select id="filter-assignment-status" class="filter-input">
+                        <option value="">📊 Todos los estados</option>
+                        <option value="active">Asignaciones Activas</option>
+                        <option value="completed">Finalizadas</option>
+                    </select>
+                    <button type="button" id="filter-assignment-search-btn" class="filter-search-btn">🔍 Buscar</button>
+                    <button type="button" id="filter-assignment-clear-btn" class="filter-clear-btn">🔄 Limpiar</button>
+                </div>
+
+                <!-- Indicador de recursos en banca -->
+                <div id="bench-indicator" style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:none;">
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <span style="font-size:24px">⚠️</span>
+                        <div>
+                            <strong style="color:#856404">Recursos disponibles en Banca:</strong>
+                            <span id="bench-count" style="margin-left:8px;background:#ffc107;color:#000;padding:2px 8px;border-radius:4px;font-weight:bold">0</span>
+                            <button type="button" id="view-bench-details" style="margin-left:12px;background:#ffc107;color:#000;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-weight:500">Ver Detalles</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="employee-grid-container">
+                    <div id="assignment-grid-loading" style="text-align:center;padding:40px;color:#666;display:none">
+                        <div>Cargando asignaciones...</div>
+                    </div>
+                    <div id="assignment-grid-empty" style="display:none;text-align:center;padding:40px;color:#999">
+                        <div style="font-size:48px;margin-bottom:10px">📊</div>
+                        <div style="font-size:18px;margin-bottom:5px">No hay asignaciones registradas</div>
+                        <div style="font-size:14px">Haz clic en "Nueva Asignación" para comenzar</div>
+                    </div>
+                    <table class="employee-table" id="assignment-table" style="display:none;">
+                        <thead>
+                            <tr>
+                                <th>🆔 ID</th>
+                                <th>👤 Empleado</th>
+                                <th>💼 Puesto</th>
+                                <th>📋 Proyecto</th>
+                                <th>🎯 Rol en Proyecto</th>
+                                <th>📅 Fecha Inicio</th>
+                                <th>📅 Fecha Fin</th>
+                                <th>⏰ Horas Asignadas</th>
+                                <th>📊 Estado</th>
+                                <th>⚙️ Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="assignment-table-body">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Modal para crear/editar asignación -->
+            <div id="assignment-modal" class="modal" style="display:none;">
+                <div class="modal-content">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:20px;border-bottom:1px solid #e5e7eb;">
+                        <h2 id="assignment-modal-title" style="margin:0">Nueva Asignación</h2>
+                        <button type="button" id="assignment-modal-close" style="background:none;border:none;font-size:24px;cursor:pointer;">✕</button>
+                    </div>
+                    <form id="assignment-form" style="padding:24px;">
+                        <input type="hidden" id="assignment-id">
+                        
+                        <div id="assignment-conflict-alert" style="display:none;background:#fee;border:1px solid #fcc;border-radius:8px;padding:12px;margin-bottom:20px;color:#c33">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span style="font-size:20px">⚠️</span>
+                                <div>
+                                    <strong>Conflicto de Asignación</strong>
+                                    <div id="assignment-conflict-message" style="font-size:14px;margin-top:4px"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:500;">Proyecto *</label>
+                            <select id="assignment-project" required style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                                <option value="">Seleccionar proyecto...</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:500;">Empleado (Recurso) *</label>
+                            <select id="assignment-employee" required style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                                <option value="">Seleccionar empleado...</option>
+                            </select>
+                            <small style="display:block;margin-top:4px;color:#6b7280">Solo se muestran empleados sin asignaciones activas</small>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:500;">Rol en el Proyecto</label>
+                            <input type="text" id="assignment-role" placeholder="Ej: Desarrollador, Líder Técnico, Analista..." style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                        </div>
+
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                            <div>
+                                <label style="display:block;margin-bottom:8px;font-weight:500;">Fecha Inicio *</label>
+                                <input type="date" id="assignment-start-date" required style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                            </div>
+                            <div>
+                                <label style="display:block;margin-bottom:8px;font-weight:500;">Fecha Fin (Estimada)</label>
+                                <input type="date" id="assignment-end-date" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                                <small style="display:block;margin-top:4px;color:#6b7280">Dejar vacío si no tiene fecha definida</small>
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:500;">Horas Asignadas (por semana)</label>
+                            <input type="number" id="assignment-hours" min="1" max="60" step="0.5" placeholder="Ej: 40" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                            <small style="display:block;margin-top:4px;color:#6b7280">Horas semanales dedicadas al proyecto</small>
+                        </div>
+
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                            <button type="button" id="assignment-cancel" class="btn-secondary">Cancelar</button>
+                            <button type="submit" id="assignment-submit" class="btn-primary">Guardar Asignación</button>
+                        </div>
                     </form>
                 </div>
             </div>
+
+            <!-- Modal para ver recursos en banca -->
+            <div id="bench-modal" class="modal" style="display:none;">
+                <div class="modal-content" style="max-width:900px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:20px;border-bottom:1px solid #e5e7eb;">
+                        <h2 style="margin:0">🏖️ Recursos Disponibles (Banca)</h2>
+                        <button type="button" id="bench-modal-close" style="background:none;border:none;font-size:24px;cursor:pointer;">✕</button>
+                    </div>
+                    <div style="padding:24px;">
+                        <p style="color:#6b7280;margin-bottom:20px">Empleados activos sin asignaciones activas a proyectos</p>
+                        
+                        <div id="bench-grid-loading" style="text-align:center;padding:40px;color:#666;display:none">
+                            <div>Cargando recursos...</div>
+                        </div>
+                        
+                        <div id="bench-grid-empty" style="display:none;text-align:center;padding:40px;color:#28a745">
+                            <div style="font-size:48px;margin-bottom:10px">✅</div>
+                            <div style="font-size:18px;margin-bottom:5px">¡Excelente!</div>
+                            <div style="font-size:14px">Todos los recursos están asignados a proyectos activos</div>
+                        </div>
+                        
+                        <table class="employee-table" id="bench-table" style="display:none;">
+                            <thead>
+                                <tr>
+                                    <th>👤 Empleado</th>
+                                    <th>💼 Puesto</th>
+                                    <th>🏢 Área</th>
+                                    <th>🏭 Entidad</th>
+                                    <th>📅 Último Proyecto</th>
+                                    <th>⏰ Días sin Proyecto</th>
+                                    <th>⚙️ Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bench-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Nueva sección: Reportes -->
+            <section id="reportes" class="card view" style="display:none;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                    <h2 style="margin:0">📊 Reportes y Análisis</h2>
+                    <div style="display:flex;gap:8px">
+                        <button type="button" id="refresh-reports-btn" class="btn-add" style="background:#6c757d">🔄 Actualizar</button>
+                        <button type="button" id="export-reports-btn" class="btn-add" style="background:#28a745">📥 Exportar</button>
+                    </div>
+                </div>
+
+                <!-- Resumen General -->
+                <div id="reports-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:30px">
+                    <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:20px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+                        <div style="font-size:32px;font-weight:bold" id="summary-active-employees">-</div>
+                        <div style="font-size:14px;opacity:0.9">Empleados Activos</div>
+                    </div>
+                    <div style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);color:white;padding:20px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+                        <div style="font-size:32px;font-weight:bold" id="summary-active-projects">-</div>
+                        <div style="font-size:14px;opacity:0.9">Proyectos Activos</div>
+                    </div>
+                    <div style="background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);color:white;padding:20px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+                        <div style="font-size:32px;font-weight:bold" id="summary-assigned-employees">-</div>
+                        <div style="font-size:14px;opacity:0.9">Empleados Asignados</div>
+                    </div>
+                    <div style="background:linear-gradient(135deg,#43e97b 0%,#38f9d7 100%);color:white;padding:20px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+                        <div style="font-size:32px;font-weight:bold" id="summary-bench-employees">-</div>
+                        <div style="font-size:14px;opacity:0.9">Recursos en Banca</div>
+                    </div>
+                    <div style="background:linear-gradient(135deg,#fa709a 0%,#fee140 100%);color:white;padding:20px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+                        <div style="font-size:32px;font-weight:bold" id="summary-projects-with-assignments">-</div>
+                        <div style="font-size:14px;opacity:0.9">Proyectos con Recursos</div>
+                    </div>
+                    <div style="background:linear-gradient(135deg,#30cfd0 0%,#330867 100%);color:white;padding:20px;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1)">
+                        <div style="font-size:32px;font-weight:bold" id="summary-total-hours">-</div>
+                        <div style="font-size:14px;opacity:0.9">Horas Totales Activas</div>
+                    </div>
+                </div>
+
+                <!-- Tabs de Reportes -->
+                <div class="tab-container">
+                    <div class="tab-buttons">
+                        <button type="button" class="tab-button active" onclick="switchReportTab('resources-by-project')">Recursos por Proyecto</button>
+                        <button type="button" class="tab-button" onclick="switchReportTab('projects-by-resource')">Proyectos por Recurso</button>
+                        <button type="button" class="tab-button" onclick="switchReportTab('top-projects')">Top Proyectos</button>
+                        <button type="button" class="tab-button" onclick="switchReportTab('top-resources')">Top Recursos</button>
+                    </div>
+
+                    <!-- Tab: Recursos por Proyecto -->
+                    <div class="tab-content active" id="report-tab-resources-by-project" style="margin-top:20px">
+                        <div id="resources-by-project-loading" style="text-align:center;padding:40px;color:#666;display:none">
+                            Cargando reporte...
+                        </div>
+                        <div id="resources-by-project-container"></div>
+                    </div>
+
+                    <!-- Tab: Proyectos por Recurso -->
+                    <div class="tab-content" id="report-tab-projects-by-resource" style="margin-top:20px">
+                        <div id="projects-by-resource-loading" style="text-align:center;padding:40px;color:#666;display:none">
+                            Cargando reporte...
+                        </div>
+                        <div id="projects-by-resource-container"></div>
+                    </div>
+
+                    <!-- Tab: Top Proyectos -->
+                    <div class="tab-content" id="report-tab-top-projects" style="margin-top:20px">
+                        <div id="top-projects-container" style="background:white;padding:24px;border-radius:8px;border:1px solid #e5e7eb">
+                            <h3 style="margin-top:0">🏆 Proyectos con Más Recursos Asignados</h3>
+                            <table class="employee-table" id="top-projects-table">
+                                <thead>
+                                    <tr>
+                                        <th>🏅 Posición</th>
+                                        <th>📋 Proyecto</th>
+                                        <th>👥 # Recursos</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="top-projects-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Top Recursos -->
+                    <div class="tab-content" id="report-tab-top-resources" style="margin-top:20px">
+                        <div id="top-resources-container" style="background:white;padding:24px;border-radius:8px;border:1px solid #e5e7eb">
+                            <h3 style="margin-top:0">⭐ Recursos Más Activos</h3>
+                            <table class="employee-table" id="top-resources-table">
+                                <thead>
+                                    <tr>
+                                        <th>🏅 Posición</th>
+                                        <th>👤 Empleado</th>
+                                        <th>📋 # Proyectos</th>
+                                        <th>⏰ Horas Totales</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="top-resources-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
             <section id="catalogos" class="card view" style="display:none;">
                 <h2 style="margin-top:0">📋 Gestión de Catálogos</h2>
@@ -704,7 +1037,6 @@
                         <textarea id="candidate-notes" placeholder="Notas (opcional)" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff;font-family:Inter,Arial"></textarea>
                         <div style="margin-top:16px;display:flex;gap:8px">
                             <button type="submit" id="candidate-submit">Guardar</button>
-                            <button type="button" id="candidate-cancel">Cancelar</button>
                         </div>
                     </form>
                 </div>
@@ -769,6 +1101,7 @@
                             <button type="button" class="tab-button active" data-tab="general">Información General</button>
                             <button type="button" class="tab-button" data-tab="expediente">Expediente</button>
                             <button type="button" class="tab-button" data-tab="hr">Recursos Humanos</button>
+                            <button type="button" class="tab-button" data-tab="asignaciones">Asignaciones</button>
                         </div>
 
                         <form id="employee-form">
@@ -1109,6 +1442,54 @@
                                 </div>
                             </div>
 
+                            <!-- Pestaña: Asignaciones -->
+                            <div class="tab-content" id="tab-asignaciones">
+                                <div class="form-section">
+                                    <h4>Historial de Proyectos</h4>
+                                    <div id="employee-assignments-loading" style="text-align:center;padding:20px;color:#666;display:none">
+                                        Cargando historial de proyectos...
+                                    </div>
+                                    <div id="employee-assignments-empty" style="text-align:center;padding:20px;color:#999;display:none">
+                                        <div style="font-size:32px;margin-bottom:10px">📋</div>
+                                        <div>Este empleado no tiene asignaciones registradas</div>
+                                    </div>
+                                    <div id="employee-assignments-container" style="display:none">
+                                        <div id="employee-assignments-summary" style="background:#f8f9fa;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px">
+                                            <div>
+                                                <div style="font-size:24px;font-weight:bold;color:#007bff" id="emp-total-projects">0</div>
+                                                <div style="font-size:12px;color:#6b7280">Total Proyectos</div>
+                                            </div>
+                                            <div>
+                                                <div style="font-size:24px;font-weight:bold;color:#28a745" id="emp-active-projects">0</div>
+                                                <div style="font-size:12px;color:#6b7280">Proyectos Activos</div>
+                                            </div>
+                                            <div>
+                                                <div style="font-size:24px;font-weight:bold;color:#6c757d" id="emp-completed-projects">0</div>
+                                                <div style="font-size:12px;color:#6b7280">Completados</div>
+                                            </div>
+                                            <div>
+                                                <div style="font-size:24px;font-weight:bold;color:#17a2b8" id="emp-total-hours">0</div>
+                                                <div style="font-size:12px;color:#6b7280">Horas Totales</div>
+                                            </div>
+                                        </div>
+                                        <table class="employee-table" id="employee-assignments-table" style="width:100%">
+                                            <thead>
+                                                <tr>
+                                                    <th>📋 Proyecto</th>
+                                                    <th>🎯 Rol</th>
+                                                    <th>📅 Inicio</th>
+                                                    <th>📅 Fin</th>
+                                                    <th>⏰ Horas</th>
+                                                    <th>📊 Estado</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="employee-assignments-tbody">
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div style="margin-top:16px;display:flex;gap:8px">
                                 <button type="submit" id="employee-submit">Guardar</button>
                                 <button type="button" id="employee-cancel">Cancelar</button>
@@ -1121,104 +1502,63 @@
     </div>
 
     <!-- Modal de Edición de Equipos -->
-    <div id="equipment-modal" class="modal">
-        <div class="modal-content equipment-modal-content">
+    <div id="equipment-modal" class="modal" style="display:none">
+        <div class="modal-content">
             <div class="modal-header">
-                <h3 id="equipment-modal-title">📦 Editar Equipo</h3>
-                <span class="close" onclick="closeEquipmentModal()">&times;</span>
+                <h3 id="equipment-modal-title">Agregar Equipo</h3>
+                <button type="button" class="modal-close" id="equipment-modal-close" onclick="closeEquipmentModal()">&times;</button>
             </div>
-            <div class="modal-body">
-                <form id="equipment-form">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="equip-codigo">Código *</label>
-                            <input type="text" id="equip-codigo" name="codigo" required readonly>
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-nombre">Nombre *</label>
-                            <input type="text" id="equip-nombre" name="nombre" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-marca">Marca</label>
-                            <select id="equip-marca" name="marca">
-                                <option value="">Seleccionar marca...</option>
-                                <option value="Dell">Dell</option>
-                                <option value="HP">HP</option>
-                                <option value="Samsung">Samsung</option>
-                                <option value="Lenovo">Lenovo</option>
-                                <option value="Apple">Apple</option>
-                                <option value="Officeline">Officeline</option>
-                                <option value="Microsoft">Microsoft</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-modelo">Modelo</label>
-                            <input type="text" id="equip-modelo" name="modelo">
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-serie">Serie</label>
-                            <input type="text" id="equip-serie" name="serie">
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-categoria">Categoría *</label>
-                            <select id="equip-categoria" name="categoria" required>
-                                <option value="">Seleccionar categoría...</option>
-                                <option value="Computo">Computo</option>
-                                <option value="Mobiliario">Mobiliario</option>
-                                <option value="Electronico">Electronico</option>
-                                <option value="Herramientas">Herramientas</option>
-                                <option value="Vehiculos">Vehiculos</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-ubicacion">Ubicación</label>
-                            <select id="equip-ubicacion" name="ubicacion">
-                                <option value="">Seleccionar ubicación...</option>
-                                <option value="Oficina 201">Oficina 201</option>
-                                <option value="Oficina 202">Oficina 202</option>
-                                <option value="Área Común">Área Común</option>
-                                <option value="Almacén">Almacén</option>
-                                <option value="Recepción">Recepción</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-asignado">Asignado a</label>
-                            <select id="equip-asignado" name="asignado">
-                                <option value="">Sin asignar</option>
-                                <!-- Se llenará dinámicamente -->
-                            </select>
-                            <small style="color:#6b7280;font-size:12px;margin-top:4px;">
-                                💡 Selecciona un empleado de la lista para asignar este equipo
-                            </small>
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-estado">Estado *</label>
-                            <select id="equip-estado" name="estado" required>
-                                <option value="Activo">Activo</option>
-                                <option value="Inactivo">Inactivo</option>
-                                <option value="Mantenimiento">Mantenimiento</option>
-                                <option value="Baja">Baja</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-valor">Valor ($)</label>
-                            <input type="number" id="equip-valor" name="valor" step="0.01" min="0">
-                        </div>
-                        <div class="form-group">
-                            <label for="equip-fecha">Fecha de Compra</label>
-                            <input type="date" id="equip-fecha" name="fechaCompra">
-                        </div>
-                        <div class="form-group full-width">
-                            <label for="equip-observaciones">Observaciones</label>
-                            <textarea id="equip-observaciones" name="observaciones" rows="3" placeholder="Notas adicionales sobre el equipo..."></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="submit" class="btn-primary">💾 Guardar Cambios</button>
-                        <button type="button" class="btn-secondary" onclick="closeEquipmentModal()">❌ Cancelar</button>
-                    </div>
-                </form>
-            </div>
+            <form id="equipment-form">
+                <input type="text" id="equip-codigo" placeholder="Código" required readonly style="background:#f3f4f6">
+                <input type="text" id="equip-nombre" placeholder="Nombre del equipo" required>
+                <div style="display:flex;gap:10px">
+                    <select id="equip-marca" style="flex:1;width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                        <option value="">Marca...</option>
+                        <option value="Dell">Dell</option>
+                        <option value="HP">HP</option>
+                        <option value="Samsung">Samsung</option>
+                        <option value="Lenovo">Lenovo</option>
+                        <option value="Apple">Apple</option>
+                        <option value="Officeline">Officeline</option>
+                        <option value="Microsoft">Microsoft</option>
+                    </select>
+                    <input type="text" id="equip-modelo" placeholder="Modelo" style="flex:1">
+                </div>
+                <input type="text" id="equip-serie" placeholder="Número de serie">
+                <select id="equip-categoria" required style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                    <option value="">Categoría...</option>
+                    <option value="Computo">Computo</option>
+                    <option value="Mobiliario">Mobiliario</option>
+                    <option value="Electronico">Electronico</option>
+                    <option value="Herramientas">Herramientas</option>
+                    <option value="Vehiculos">Vehiculos</option>
+                </select>
+                <select id="equip-ubicacion" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                    <option value="">Ubicación...</option>
+                    <option value="Oficina 201">Oficina 201</option>
+                    <option value="Oficina 202">Oficina 202</option>
+                    <option value="Área Común">Área Común</option>
+                    <option value="Almacén">Almacén</option>
+                    <option value="Recepción">Recepción</option>
+                </select>
+                <select id="equip-asignado" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                    <option value="">Asignado a...</option>
+                </select>
+                <select id="equip-estado" required style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                    <option value="Activo">Activo</option>
+                    <option value="Inactivo">Inactivo</option>
+                    <option value="Mantenimiento">Mantenimiento</option>
+                    <option value="Baja">Baja</option>
+                </select>
+                <div style="display:flex;gap:10px">
+                    <input type="number" id="equip-valor" placeholder="Valor ($)" step="0.01" min="0" style="flex:1">
+                    <input type="date" id="equip-fecha" placeholder="Fecha de compra" style="flex:1">
+                </div>
+                <textarea id="equip-observaciones" placeholder="Observaciones (opcional)" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff;font-family:Inter,Arial" rows="3"></textarea>
+                <div style="margin-top:16px;display:flex;gap:8px">
+                    <button type="submit" id="equipment-submit">Guardar</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -1291,7 +1631,16 @@
     <script src="js/geographic.js"></script>
     <script src="js/status.js"></script>
     <script src="js/inventory.js"></script>
+    <script src="js/assignments.js"></script>
+    <script src="js/reports.js"></script>
     <script src="js/app.js"></script>
+    
+    <script>
+        // Initialize authentication UI after all scripts loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            initAuthUI();
+        });
+    </script>
     
     <!-- Sistema de pestañas será manejado completamente por app.js -->
 </body>

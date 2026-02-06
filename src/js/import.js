@@ -15,7 +15,18 @@ importEmployeesBtn.addEventListener('click', () => {
 });
 
 // Cancel import
-cancelImportBtn.addEventListener('click', () => {
+cancelImportBtn.addEventListener('click', async () => {
+  const result = await Swal.fire({
+    title: '¿Cancelar importación?',
+    text: 'El archivo seleccionado se descartará',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, cancelar',
+    cancelButtonText: 'Continuar',
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6'
+  });
+  if (!result.isConfirmed) return;
   importEmployeesArea.style.display = 'none';
   importEmployeesBtn.style.display = 'block';
   excelFileInput.value = '';
@@ -65,17 +76,26 @@ async function handleEmployeeFileUpload() {
     const result = await response.json();
 
     if (!response.ok) {
-      alert(`Error: ${result.error}`);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error al importar',
+        text: result.error
+      });
       return;
     }
 
     // Show results
-    let message = `✅ Se importaron ${result.imported} empleados de ${result.total}`;
+    let message = `Se importaron ${result.imported} empleados de ${result.total} exitosamente`;
     if (result.errors && result.errors.length > 0) {
-      const errorDetails = result.errors.map(e => `Fila ${e.row}: ${e.error}`).join('\n');
-      message += `\n\n⚠️ Errores:\n${errorDetails}`;
+      const errorDetails = result.errors.map(e => `Fila ${e.row}: ${e.error}`).join('<br>');
+      message += `<br><br><strong>Errores:</strong><br>${errorDetails}`;
     }
-    alert(message);
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'Importación completada',
+      html: message
+    });
 
     // Refresh list and close import area
     importEmployeesArea.style.display = 'none';
@@ -104,7 +124,18 @@ importCandidatesBtn.addEventListener('click', () => {
 });
 
 // Cancel import
-cancelImportCandidatesBtn.addEventListener('click', () => {
+cancelImportCandidatesBtn.addEventListener('click', async () => {
+  const result = await Swal.fire({
+    title: '¿Cancelar importación?',
+    text: 'El archivo seleccionado se descartará',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, cancelar',
+    cancelButtonText: 'Continuar',
+    confirmButtonColor: '#d33',
+    cancelButtonColor: '#3085d6'
+  });
+  if (!result.isConfirmed) return;
   importCandidatesArea.style.display = 'none';
   importCandidatesBtn.style.display = 'block';
   excelFileCandidatesInput.value = '';
@@ -154,17 +185,26 @@ async function handleCandidateFileUpload() {
     const result = await response.json();
 
     if (!response.ok) {
-      alert(`Error: ${result.error}`);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error al importar candidatos',
+        text: result.error
+      });
       return;
     }
 
     // Show results
-    let message = `✅ Se importaron ${result.imported} candidatos de ${result.total}`;
+    let message = `Se importaron ${result.imported} candidatos de ${result.total} exitosamente`;
     if (result.errors && result.errors.length > 0) {
-      const errorDetails = result.errors.map(e => `Fila ${e.row}: ${e.error}`).join('\n');
-      message += `\n\n⚠️ Errores:\n${errorDetails}`;
+      const errorDetails = result.errors.map(e => `Fila ${e.row}: ${e.error}`).join('<br>');
+      message += `<br><br><strong>Errores:</strong><br>${errorDetails}`;
     }
-    alert(message);
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'Importación de candidatos completada',
+      html: message
+    });
 
     // Refresh list and close import area
     importCandidatesArea.style.display = 'none';
@@ -174,6 +214,10 @@ async function handleCandidateFileUpload() {
     renderCandidates();
 
   } catch (err) {
-    alert('Error uploading file: ' + err.message);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error al cargar archivo',
+      text: err.message
+    });
   }
 }
