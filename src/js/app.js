@@ -697,6 +697,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     addBtn.addEventListener('click', async () => await openModal(false));
     modalClose.addEventListener('click', async () => await closeModal());
     cancelBtn.addEventListener('click', async () => await closeModal());
+
     modal.addEventListener('click', async (e) => {
         if (e.target === modal) await closeModal();
     });
@@ -1535,7 +1536,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isInsideModal = e.target.closest('.modal-content');
         const isFormElement = e.target.matches('input, textarea, select, label, button[type="submit"], button[type="button"]:not(.modal-close)');
         
-        if (isInsideModal && isFormElement) {
+        const isAnyCancel = !!e.target.closest('#employee-cancel, #project-cancel, #vacation-cancel, #assignment-cancel');
+        const isAnyClose  = !!e.target.closest('.modal-close, #modal-close, #project-modal-close, #vacation-modal-close, #assignment-modal-close');
+
+
+        if (isInsideModal && isFormElement && !isAnyCancel && !isAnyClose) {
             e.stopPropagation();
         }
     }, true); // Use capture phase

@@ -1156,8 +1156,23 @@ app.post('/api/employees-v2', async (req, res) => {
   // Validate email format
   if (email) {
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Use validator for stricter checks; fallback to your regex if preferred
     if (!emailRe.test(String(email))) {
       return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Check if email already exists (case-insensitive)
+    try {
+      const dupe = await db.query(
+        `SELECT 1 FROM employees_v2 WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+        [email]
+      );
+      if (dupe.rowCount > 0) {
+        return res.status(409).json({ error: 'Email already exists' });
+      }
+    } catch (e) {
+      console.error('Email existence check failed:', e);
+      return res.status(500).json({ error: 'Server error while checking email' });
     }
   }
 
@@ -2228,7 +2243,6 @@ app.get('/api/employees/:id/assignments', async (req, res) => {
         pa.project_id,
         p.name as project_name,
         p.description as project_description,
-        p.status as project_status,
         pa.role as role_in_project,
         pa.start_date,
         pa.end_date,
