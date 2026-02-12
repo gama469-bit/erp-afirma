@@ -318,6 +318,312 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // ============ JOB OPENINGS (VACANTES) ============
+    const addVacantBtn = document.getElementById('add-vacant-btn');
+    const vacantList = document.getElementById('vacant-list');
+    const jobOpeningModal = document.getElementById('job-opening-modal');
+    const jobOpeningForm = document.getElementById('job-opening-form');
+    const jobOpeningModalClose = document.getElementById('job-opening-modal-close');
+    const jobOpeningCancel = document.getElementById('job-opening-cancel');
+    let allJobOpenings = [];
+
+    // Fetch all job openings
+    async function fetchJobOpenings() {
+        try {
+            const url = window.getApiUrl ? window.getApiUrl('/api/job-openings') : '/api/job-openings';
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Error al cargar vacantes');
+            const data = await res.json();
+            allJobOpenings = data;
+            renderJobOpenings(data);
+        } catch (e) {
+            console.error('❌ Error fetching job openings:', e);
+            if (vacantList) {
+                vacantList.innerHTML = '<li style="color:red;text-align:center;padding:20px">Error al cargar vacantes: ' + e.message + '</li>';
+            }
+        }
+    }
+
+    // Render job openings list
+    function renderJobOpenings(jobOpenings) {
+        if (!vacantList) return;
+        vacantList.innerHTML = '';
+        
+        if (!jobOpenings || jobOpenings.length === 0) {
+            vacantList.innerHTML = '<li style="text-align:center;padding:40px;color:#999"><div style="font-size:48px;margin-bottom:10px">🎯</div><div>No hay vacantes registradas</div></li>';
+            return;
+        }
+
+        jobOpenings.forEach(job => {
+            const li = document.createElement('li');
+            li.className = 'candidate-item';
+            li.style.cssText = 'background:white;border:1px solid #e0e0e0;border-radius:6px;padding:15px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center';
+            
+            const statusColorMap = {
+                'Activa': '#10b981',
+                'Inactiva': '#6b7280',
+                'Cubierta': '#3b82f6',
+                'Cancelada': '#ef4444'
+            };
+            const statusColor = statusColorMap[job.status] || '#6b7280';
+
+            li.innerHTML = `
+                <div style="flex:1">
+                    <div style="font-weight:600;color:#1f2937;margin-bottom:8px">
+                        📍 ${job.position_name || 'Sin nombre'}
+                    </div>
+                    <div style="font-size:13px;color:#6b7280;margin-bottom:6px">
+                        <strong>Empresa:</strong> ${job.company || 'N/A'}
+                    </div>
+                    <div style="font-size:13px;color:#6b7280;margin-bottom:6px">
+                        <strong>Contacto:</strong> ${job.contact_person_name || 'N/A'} 
+                        ${job.contact_email ? '(' + job.contact_email + ')' : ''}
+                    </div>
+                    <div style="font-size:12px;color:#9ca3af">
+                        <strong>Rol:</strong> ${job.role || 'N/A'} | 
+                        <strong>Modalidad:</strong> ${job.work_modality || 'N/A'} |
+                        <strong>Sueldo:</strong> $${job.salary || 'N/A'}
+                    </div>
+                    <div style="font-size:12px;color:#9ca3af;margin-top:6px">
+                        <strong>Exp:</strong> ${job.years_experience || 'N/A'} años
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-left:15px">
+                    <div style="background:${statusColor};color:white;padding:4px 12px;border-radius:4px;font-size:12px;text-align:center">
+                        ${job.status === 'Activa' ? '📍' : job.status === 'Cubierta' ? '✅' : job.status === 'Inactiva' ? '❌' : '🚫'} ${job.status}
+                    </div>
+                    <button class="btn-action-edit" data-id="${job.id}" style="padding:6px 12px;font-size:12px">✏️ Editar</button>
+                    <button class="btn-action-delete" data-id="${job.id}" style="padding:6px 12px;font-size:12px">🗑️ Eliminar</button>
+                </div>
+            `;
+            vacantList.appendChild(li);
+        });
+
+        // Agregar event listeners después de renderizar
+        vacantList.querySelectorAll('.btn-action-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.target.closest('button').dataset.id;
+                const job = allJobOpenings.find(j => String(j.id) === String(id));
+                if (job) openJobOpeningModal(true, job);
+            });
+        });
+
+        vacantList.querySelectorAll('.btn-action-delete').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.closest('button').dataset.id;
+                const result = await Swal.fire({
+                    title: '¿Eliminar esta vacante?',
+                    text: 'Esta acción no se puede deshacer',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, eliminar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#3085d6'
+                });
+                if (!result.isConfirmed) return;
+
+                try {
+                    const url = window.getApiUrl ? window.getApiUrl(`/api/job-openings/${id}`) : `/api/job-openings/${id}`;
+                    const res = await fetch(url, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'Deleted' })
+                    });
+                    if (!res.ok) throw new Error('Error al eliminar');
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Vacante eliminada',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                    fetchJobOpenings();
+                } catch (err) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error al eliminar',
+                        text: err.message
+                    });
+                }
+            });
+        });
+    }
+
+    // Open/Close modal
+    function openJobOpeningModal(isEdit = false, job = null) {
+        const title = document.getElementById('job-opening-modal-title');
+        title.textContent = isEdit ? '✏️ Editar Vacante' : '🎯 Nueva Vacante';
+
+        // Reset form
+        jobOpeningForm.reset();
+        document.getElementById('job-opening-id').value = '';
+
+        // Reset tabs - específico para modal de vacantes
+        const jobModal = document.getElementById('job-opening-modal');
+        if (jobModal) {
+            const tabButtons = jobModal.querySelectorAll('.tab-button');
+            const tabContents = jobModal.querySelectorAll('.tab-content');
+            
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Activar primer tab
+            if (tabButtons.length > 0) tabButtons[0].classList.add('active');
+            const firstTab = jobModal.querySelector('#tab-job-opening-datos');
+            if (firstTab) firstTab.classList.add('active');
+        }
+
+        if (isEdit && job) {
+            document.getElementById('job-opening-id').value = job.id;
+            document.getElementById('job-company').value = job.company || '';
+            document.getElementById('job-contact-name').value = job.contact_person_name || '';
+            document.getElementById('job-contact-email').value = job.contact_email || '';
+            document.getElementById('job-cell-area').value = job.cell_area || '';
+            document.getElementById('job-office-location').value = job.office_location || '';
+            document.getElementById('job-work-modality').value = job.work_modality || '';
+            document.getElementById('job-salary').value = job.salary || '';
+            document.getElementById('job-position-name').value = job.position_name || '';
+            document.getElementById('job-role').value = job.role || '';
+            document.getElementById('job-years-experience').value = job.years_experience || '';
+            document.getElementById('job-technical-tools').value = job.technical_tools || '';
+            document.getElementById('job-basic-knowledge').value = job.basic_knowledge || '';
+            document.getElementById('job-desirable-code').value = job.desirable_code || '';
+            document.getElementById('job-status').value = job.status || 'Activa';
+        }
+
+        jobOpeningModal.style.display = 'flex';
+    }
+
+    function closeJobOpeningModal() {
+        jobOpeningModal.style.display = 'none';
+        jobOpeningForm.reset();
+    }
+
+    // Event listeners for modal
+    addVacantBtn?.addEventListener('click', () => openJobOpeningModal(false));
+    jobOpeningModalClose?.addEventListener('click', closeJobOpeningModal);
+    jobOpeningCancel?.addEventListener('click', closeJobOpeningModal);
+    jobOpeningModal?.addEventListener('click', (e) => {
+        if (e.target === jobOpeningModal) closeJobOpeningModal();
+    });
+
+    // Tab switching
+    document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const tabName = btn.dataset.tab;
+            
+            // Remove active from all tabs
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Add active to clicked tab
+            btn.classList.add('active');
+            const tabContent = document.getElementById(tabName);
+            if (tabContent) tabContent.classList.add('active');
+        });
+    });
+
+    // Form submit
+    jobOpeningForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const id = document.getElementById('job-opening-id').value;
+        const payload = {
+            company: document.getElementById('job-company').value,
+            contact_person_name: document.getElementById('job-contact-name').value,
+            contact_email: document.getElementById('job-contact-email').value,
+            cell_area: document.getElementById('job-cell-area').value,
+            office_location: document.getElementById('job-office-location').value,
+            work_modality: document.getElementById('job-work-modality').value,
+            salary: parseFloat(document.getElementById('job-salary').value) || null,
+            position_name: document.getElementById('job-position-name').value,
+            role: document.getElementById('job-role').value,
+            years_experience: document.getElementById('job-years-experience').value,
+            technical_tools: document.getElementById('job-technical-tools').value,
+            basic_knowledge: document.getElementById('job-basic-knowledge').value,
+            desirable_code: document.getElementById('job-desirable-code').value,
+            status: document.getElementById('job-status').value
+        };
+
+        if (!payload.company || !payload.contact_person_name || !payload.contact_email || !payload.position_name) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Campos requeridos',
+                text: 'Empresa, Contacto, Email y Puesto son obligatorios'
+            });
+            return;
+        }
+
+        try {
+            const url = id 
+                ? (window.getApiUrl ? window.getApiUrl(`/api/job-openings/${id}`) : `/api/job-openings/${id}`)
+                : (window.getApiUrl ? window.getApiUrl('/api/job-openings') : '/api/job-openings');
+
+            const method = id ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const result = await res.json();
+
+            Swal.fire({
+                icon: 'success',
+                title: id ? 'Vacante actualizada' : 'Vacante creada',
+                timer: 2000,
+                showConfirmButton: false
+            });
+
+            closeJobOpeningModal();
+            fetchJobOpenings();
+        } catch (err) {
+            console.error('❌ Error:', err);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error al guardar',
+                text: err.message
+            });
+        }
+    });
+
+    // Filtrado de vacantes
+    function filterJobOpenings() {
+        const empresa = document.getElementById('filter-vacante-empresa')?.value.toLowerCase() || '';
+        const puesto = document.getElementById('filter-vacante-puesto')?.value.toLowerCase() || '';
+        const status = document.getElementById('filter-vacante-status')?.value || '';
+
+        const filtered = allJobOpenings.filter(job => {
+            const matchEmpresa = !empresa || (job.company || '').toLowerCase().includes(empresa);
+            const matchPuesto = !puesto || (job.position_name || '').toLowerCase().includes(puesto) || (job.role || '').toLowerCase().includes(puesto);
+            const matchStatus = !status || job.status === status;
+            
+            return matchEmpresa && matchPuesto && matchStatus;
+        });
+
+        renderJobOpenings(filtered);
+    }
+
+    // Event listeners para filtros
+    document.getElementById('filter-vacante-search-btn')?.addEventListener('click', filterJobOpenings);
+    document.getElementById('filter-vacante-clear-btn')?.addEventListener('click', () => {
+        document.getElementById('filter-vacante-empresa').value = '';
+        document.getElementById('filter-vacante-puesto').value = '';
+        document.getElementById('filter-vacante-status').value = '';
+        renderJobOpenings(allJobOpenings);
+    });
+
+    // Filtrar en tiempo real cuando cambia el status
+    document.getElementById('filter-vacante-status')?.addEventListener('change', filterJobOpenings);
+
+    // Initial load
+    fetchJobOpenings();
+
     const employeeForm = document.getElementById('employee-form');
     const candidateForm = document.getElementById('candidate-form');
     const navLinks = document.querySelectorAll('.nav a');
@@ -646,10 +952,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    function openCandidateModal(isEdit = false){
+    function openCandidateModal(isEdit = false, candidate = null){
         document.getElementById('candidate-modal-title').textContent = isEdit ? 'Actualizar Candidato' : 'Agregar Candidato';
         candidateModal.style.display = 'flex';
-        if (!isEdit) window.clearCandidateForm();
+        if (!isEdit) {
+            window.clearCandidateForm();
+        }
+        // Cargar opciones de posiciones del catálogo
+        const positionToPreload = isEdit && candidate ? candidate.position_applied : null;
+        loadCandidatePositions(positionToPreload);
+    }
+
+    async function loadCandidatePositions(preloadPosition = null) {
+        try {
+            // Cargar vacantes activas
+            const vacantesUrl = window.getApiUrl ? window.getApiUrl('/api/job-openings') : '/api/job-openings';
+            const vacantesResponse = await fetch(vacantesUrl);
+            const vacantes = await vacantesResponse.json();
+            
+            const positionSelect = document.getElementById('candidate-position');
+            if (positionSelect) {
+                positionSelect.innerHTML = '<option value="">Seleccionar posición solicitada...</option>';
+                
+                // Solo mostrar las posiciones de las vacantes activas
+                vacantes.forEach(v => {
+                    // Filtrar solo vacantes activas
+                    if (v.status === 'Activa') {
+                        const opt = document.createElement('option');
+                        opt.value = v.position_name;
+                        opt.textContent = v.position_name;
+                        positionSelect.appendChild(opt);
+                    }
+                });
+                
+                // Pre-cargar la posición si está disponible
+                if (preloadPosition) {
+                    positionSelect.value = preloadPosition;
+                }
+            }
+        } catch (error) {
+            console.error('Error al cargar posiciones:', error);
+        }
     }
 
     function closeCandidateModal(){
@@ -673,6 +1016,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (view === 'vacaciones') {
                 loadVacationEmployeeDropdown();
                 fetchVacations();
+            }
+            if (view === 'reclutamiento') {
+                loadCandidatePositions();
             }
             if (view === 'proyectos') {
                 fetchProjects();
@@ -970,6 +1316,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         const status = document.getElementById('candidate-status').value.trim();
         const notes = document.getElementById('candidate-notes').value.trim();
         
+        // Si el status es "Contratado", asignar automáticamente el usuario logueado y la fecha
+        let recruitedBy = null;
+        let hiredDate = null;
+        if (status === 'Contratado') {
+            const currentUser = getCurrentUser();
+            if (currentUser && currentUser.first_name && currentUser.last_name) {
+                recruitedBy = currentUser.first_name + ' ' + currentUser.last_name;
+                console.log('✅ Reclutador asignado:', recruitedBy);
+            } else {
+                console.log('⚠️ No se encontró usuario logueado');
+            }
+            
+            // Capturar la fecha de contratación (hoy)
+            const today = new Date();
+            hiredDate = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+            console.log('📅 Fecha de contratación asignada:', hiredDate);
+        }
+        
         if (!first || !last || !position) return;
 
         // client-side email validation (if provided)
@@ -985,17 +1349,44 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
-        const payload = { first_name: first, last_name: last, email: email || null, phone: phone || null, position_applied: position, status, notes: notes || null };
+        const payload = { first_name: first, last_name: last, email: email || null, phone: phone || null, position_applied: position, status, notes: notes || null, recruited_by: recruitedBy, hired_date: hiredDate };
+        
+        console.log('📤 Payload siendo enviado:', payload);
+        
         try {
             if (id) {
+                console.log('🔄 Actualizando candidato ID:', id);
                 await window.updateCandidate(id, payload);
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Candidato actualizado',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
+                
+                // Mensaje especial si fue contratado
+                if (status === 'Contratado') {
+                    Swal.fire({
+                        icon: 'success',
+                        title: '¡Candidato Contratado!',
+                        html: `
+                            <div style="text-align:left;margin:15px 0">
+                                <p><strong>${first} ${last}</strong> ha sido contratado</p>
+                                <p style="font-size:14px;color:#666;margin:10px 0">
+                                    ✅ Candidato actualizado<br>
+                                    👤 Reclutador: ${recruitedBy || 'N/A'}<br>
+                                    📅 Fecha: ${hiredDate || 'Hoy'}<br>
+                                    <strong style="color:#10b981">👨‍💼 Se agregó como empleado</strong>
+                                </p>
+                            </div>
+                        `,
+                        timer: 3000,
+                        showConfirmButton: false
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Candidato actualizado',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                }
             } else {
+                console.log('➕ Creando nuevo candidato');
                 await window.createCandidate(payload);
                 Swal.fire({
                     icon: 'success',
@@ -1006,6 +1397,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (err) {
             // Error ya manejado en las funciones
+            console.error('❌ Error al guardar candidato:', err);
             return;
         }
         closeCandidateModal();
@@ -1194,7 +1586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const cand = candidates.find(x=> String(x.id) === String(id));
             if (cand) {
                 window.populateCandidateForm(cand);
-                openCandidateModal(true);
+                openCandidateModal(true, cand);
             }
             return;
         }
@@ -1211,7 +1603,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 cancelButtonColor: '#3085d6'
             });
             if (!result.isConfirmed) return;
-            await window.deleteCandidate(id);
+            await window.deleteCandidate(id,'Deleted');
             await loadAndRenderCandidates();
         }
     });

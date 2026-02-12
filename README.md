@@ -14,6 +14,8 @@ Sistema profesional de gestión de empleados con base de datos normalizada, impo
 - **Índices Optimizados** para rendimiento
 - **Soft Delete** preservando históricos
 - **API RESTful** moderna
+- **[NUEVO] Tracking automático de reclutamiento** - Captura quién reclutó y cuándo
+- **[NUEVO] Creación automática de empleados** - Al contratar candidato → se agrega como empleado
 
 ## 📋 Proyecto
 
@@ -122,6 +124,18 @@ PUT    /api/employees-v2/:id       # Actualizar
 DELETE /api/employees-v2/:id       # Marcar como inactivo
 ```
 
+### Candidatos
+```bash
+GET    /api/candidates             # Listar todos
+POST   /api/candidates             # Crear candidato
+PUT    /api/candidates/:id         # Actualizar (🎯 auto-tracking al cambiar a Contratado)
+DELETE /api/candidates/:id         # Eliminar
+```
+**[NUEVO] Cuando status → "Contratado":**
+- ✅ Auto-completa `recruited_by` (nombre del usuario logueado)
+- ✅ Auto-completa `hired_date` (fecha actual)
+- ✅ Crea automáticamente empleado en tabla `employees_v2`
+
 ### Departamentos y Puestos
 ```bash
 GET    /api/departments            # Listar departamentos
@@ -182,9 +196,57 @@ Nombre | Apellido | Email | Teléfono | Posición | Estado | Notas
 ### Reclutamiento
 - Lista de candidatos
 - Agregar candidato
-- Cambiar estado (revisión → entrevista → oferta)
+- Cambiar estado (revisión → entrevista → oferta → **Contratado**)
 - Notas y comentarios
 - **Importar candidatos**
+- **[NUEVO] Auto-tracking de reclutador y fecha de contratación**
+- **[NUEVO] Auto-creación de empleado al contratar candidato**
+
+## � Sprint: Reclutamiento - Tracking Automático
+
+### Nuevas Características
+- **✅ Auto-tracking del reclutador** - Sistema captura automáticamente quién contrató
+- **✅ Fecha de contratación** - Se guarda automáticamente al cambiar status a "Contratado"
+- **✅ Creación automática de empleado** - Al contratar candidato → se agrega a empleados con:
+  - Nombre, Apellido, Email, Teléfono
+  - Posición (resuelve o crea automáticamente)
+  - Fecha de contratación
+  - Estado: Activo
+
+### Migración de Base de Datos
+**Archivo:** `server/migrations/023_add_recruitment_tracking.sql`
+- Agrega columna `recruited_by VARCHAR(255)` - quién reclutó
+- Agrega columna `hired_date DATE` - fecha de contratación
+- Crea índices para optimizar búsquedas
+
+### Cambios en API
+**Endpoint:** `PUT /api/candidates/:id`
+```javascript
+// Nuevo payload
+{
+  first_name: "Juan",
+  last_name: "Pérez",
+  email: "juan@example.com",
+  phone: "555-1234",
+  position_applied: "Developer",
+  status: "Contratado",        // ← Dispara auto-tracking
+  recruited_by: "admin",        // Auto-llenado en frontend
+  hired_date: "2026-02-10"      // Auto-llenado con fecha actual
+}
+```
+
+### Cambios en Frontend
+**Visualización en lista de candidatos:**
+- 👨‍💼 Badge "Empleado" - indica que fue agregado a empleados_v2
+- ✅ Badge "Reclutador" - muestra nombre de quien lo reclutó
+- 📅 Badge "Fecha" - muestra fecha de contratación formateada
+
+### Scripts de Setup
+```bash
+npm run migrate                 # Ejecuta todas las migraciones
+npm run validate:migrations    # Valida que migración 023 funcionó
+npm run setup:recruitment      # Migra + valida (completo)
+```
 
 ## 🔐 Seguridad
 
@@ -194,6 +256,7 @@ Nombre | Apellido | Email | Teléfono | Posición | Estado | Notas
 - Integridad referencial (FK)
 - Auditoría completa de cambios
 - Control de acceso básico
+- **[NUEVO] Tracking de reclutador en BD**
 
 ## 📈 Datos de Ejemplo
 
@@ -217,6 +280,8 @@ npm run api                    # Solo API
 npm run frontend               # Solo Frontend
 npm run migrate                # Ejecutar migraciones
 npm run dev                    # Modo desarrollo con nodemon
+npm run validate:migrations    # Valida migraciones de reclutamiento
+npm run setup:recruitment      # Setup completo de reclutamiento
 ```
 
 ### Base de Datos Queries Útiles
@@ -266,6 +331,47 @@ NODE_ENV=development
 - ✅ Errores detallados (desarrollo)
 - ✅ CORS habilitado
 
+## 🌐 Despliegue en GCP
+
+### Proceso Automático
+1. **Cloud Build** ejecuta migraciones automáticamente
+2. **Migración 023** agrega columnas `recruited_by` y `hired_date`
+3. **Validación** verifica que todo esté correcto
+4. **Cloud Run** inicia con BD lista
+
+### Checklist Pre-Deploy
+- [ ] Ejecutar `npm run setup:recruitment` en local
+- [ ] Verificar validación sin errores
+- [ ] Backup de BD en producción
+- [ ] Equipo notificado del cambio
+
+### Validación Post-Deploy
+```bash
+# Ver logs en GCP
+gcloud logging read "resource.type=cloud_run_managed" --limit=50
+
+# Verificar en BD
+SELECT column_name FROM information_schema.columns 
+WHERE table_name='candidates' 
+AND column_name IN ('recruited_by', 'hired_date');
+
+# Probar feature
+1. Ir a Reclutamiento
+2. Editar candidato
+3. Cambiar status a "Contratado"
+4. Verificar badges y empleado creado
+```
+
+### Rollback (si es necesario)
+```sql
+-- Restaurar backup (recomendado)
+gcloud sql backups restore BACKUP_ID --backup-configuration=default
+
+-- O eliminar columnas (NO RECOMENDADO - perderá datos)
+ALTER TABLE candidates DROP COLUMN IF EXISTS recruited_by;
+ALTER TABLE candidates DROP COLUMN IF EXISTS hired_date;
+```
+
 ## 🚀 Mejoras Futuras
 
 - [ ] Autenticación JWT
@@ -277,6 +383,9 @@ NODE_ENV=development
 - [ ] Notificaciones
 - [ ] Búsqueda avanzada
 - [ ] Filtros y reportes
+- [x] ✅ Tracking de reclutador
+- [x] ✅ Fecha de contratación automática
+- [x] ✅ Creación automática de empleado
 
 ## 👥 Contribuciones
 

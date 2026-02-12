@@ -161,10 +161,10 @@ async function updateCandidate(id, payload){
     }
 }
 
-async function deleteCandidate(id){
+async function deleteCandidate(id,status){
     try{
         const url = window.getApiUrl ? window.getApiUrl(`/api/candidates/${id}`) : `/api/candidates/${id}`;
-        const res = await fetch(url,{ method: 'DELETE' });
+        const res = await fetch(url,{ method: 'PATCH', body: JSON.stringify({ status }), headers: { 'Content-Type': 'application/json' } });
         if (!res.ok) {
             const errorText = await res.text();
             throw new Error(errorText || 'Error al eliminar candidato');

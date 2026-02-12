@@ -127,6 +127,7 @@
                 <a href="#" data-view="home" class="active">Inicio</a>
                 <a href="#" data-view="alta">Empleados</a>
                 <a href="#" data-view="reclutamiento">Reclutamiento</a>
+                <a href="#" data-view="vacantes">Vacantes</a>
                 <a href="#" data-view="inventario-equipos">Inventario de Equipos</a>
                 <a href="#" data-view="vacaciones">Vacaciones</a>
                 <a href="#" data-view="proyectos">Proyectos</a>
@@ -160,6 +161,12 @@
                             <div style="font-size:3em;margin-bottom:10px;">🎯</div>
                             <h3>Reclutamiento</h3>
                             <p>Administra candidatos y procesos de selección de personal</p>
+                        </div>
+
+                        <div class="home-card" onclick="document.querySelector('[data-view=vacantes]').click()">
+                            <div style="font-size:3em;margin-bottom:10px;">🎯</div>
+                            <h3>Vacantes</h3>
+                            <p>Administra vacantes de Proyectos</p>
                         </div>
                         
                         <div class="home-card" onclick="document.querySelector('[data-view=inventario-equipos]').click()">
@@ -281,6 +288,44 @@
                 </div>
                 
                 <ul id="candidate-list" class="candidate-list"></ul>
+            </section>
+
+            <section id="vacantes" class="card view" style="display:none;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                    <h2 style="margin:0">Vacantes</h2>
+                    <div style="display:flex;gap:8px">
+                        <!-- <button type="button" id="import-candidates-btn" class="btn-add">📄 Importar Excel</button> -->
+                        <button type="button" id="add-vacant-btn" class="btn-add">+ Agregar Vacante</button>
+                    </div>
+                </div>
+                
+                <!-- Filtros de Vacantes -->
+                <div class="filters-container" style="margin-bottom:20px">
+                    <input type="text" id="filter-vacante-empresa" placeholder="🔍 Buscar por empresa..." class="filter-input">
+                    <input type="text" id="filter-vacante-puesto" placeholder="💼 Puesto / Rol..." class="filter-input">
+                    <select id="filter-vacante-status" class="filter-input">
+                        <option value="">📊 Todos los estados</option>
+                        <option value="Activa">📍 Activa</option>
+                        <option value="Inactiva">❌ Inactiva</option>
+                        <option value="Cubierta">✅ Cubierta</option>
+                        <option value="Cancelada">🚫 Cancelada</option>
+                    </select>
+                    <button type="button" id="filter-vacante-search-btn" class="filter-search-btn">🔍 Buscar</button>
+                    <button type="button" id="filter-vacante-clear-btn" class="filter-clear-btn">🔄 Limpiar</button>
+                </div>
+                
+                <!-- File upload area (hidden by default) -->
+                <!-- <div id="import-candidates-area" style="display:none;background:#f0f4ff;border:2px dashed #0066ff;border-radius:8px;padding:20px;text-align:center;margin-bottom:20px">
+                    <input type="file" id="excel-file-candidates-input" accept=".xlsx,.xls,.csv" style="display:none">
+                    <div style="color:#0066ff;cursor:pointer;font-weight:600" id="import-candidates-click-area">
+                        Haz clic para seleccionar un archivo Excel o arrastralo aquí
+                    </div>
+                    <div style="font-size:12px;color:#6b7280;margin-top:8px">Soporta: .xlsx, .xls, .csv</div>
+                    <div style="font-size:12px;color:#6b7280;margin-top:12px">Las columnas deben ser: Nombre, Apellido, Email, Teléfono, Posición, Estado, Notas</div>
+                    <button type="button" id="cancel-import-candidates-btn" style="margin-top:12px;background:#6b7280;padding:8px 12px;font-size:12px">Cancelar</button>
+                </div> -->
+                
+                <ul id="vacant-list" class="vacant-list"></ul>
             </section>
 
             <section id="inventario-equipos" class="card view" style="display:none;">
@@ -1024,9 +1069,11 @@
                             <input type="text" id="candidate-first" placeholder="Nombre" required>
                             <input type="text" id="candidate-last" placeholder="Apellido" required>
                         </div>
-                        <input type="text" id="candidate-email" placeholder="Email (opcional)">
-                        <input type="text" id="candidate-phone" placeholder="Teléfono (opcional)">
-                        <input type="text" id="candidate-position" placeholder="Posición solicitada" required>
+                        <input type="text" id="candidate-email" placeholder="Email" required>
+                        <input type="text" id="candidate-phone" placeholder="Teléfono" required>
+                        <select id="candidate-position" required style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff" required>
+                            <option value="">Seleccionar posición solicitada...</option>
+                        </select>
                         <select id="candidate-status" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
                             <option value="En revisión">En revisión</option>
                             <option value="Entrevista">Entrevista</option>
@@ -1035,6 +1082,9 @@
                             <option value="Contratado">Contratado</option>
                         </select>
                         <textarea id="candidate-notes" placeholder="Notas (opcional)" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff;font-family:Inter,Arial"></textarea>
+                        <!-- Campos ocultos para guardar automáticamente -->
+                        <input type="hidden" id="candidate-recruited-by-value">
+                        <input type="hidden" id="candidate-hired-date-value">
                         <div style="margin-top:16px;display:flex;gap:8px">
                             <button type="submit" id="candidate-submit">Guardar</button>
                         </div>
@@ -1087,6 +1137,101 @@
                 </div>
             </div>
 
+            <!-- Modal para Vacantes -->
+            <div id="job-opening-modal" class="modal" style="display:none">
+                <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                    <div class="modal-header">
+                        <h3 id="job-opening-modal-title">🎯 Nueva Vacante</h3>
+                        <button type="button" class="modal-close" id="job-opening-modal-close">&times;</button>
+                    </div>
+                    <form id="job-opening-form">
+                        <input type="hidden" id="job-opening-id">
+                        
+                        <!-- Sistema de Pestañas -->
+                        <div class="tab-container">
+                            <div class="tab-buttons">
+                                <button type="button" class="tab-button active" data-tab="job-opening-datos">📧 Datos para envío</button>
+                                <button type="button" class="tab-button" data-tab="job-opening-perfil">👤 Perfil</button>
+                            </div>
+
+                            <!-- Pestaña 1: Datos para envío -->
+                            <div id="tab-job-opening-datos" class="tab-content active">
+                                <div style="padding:20px 0">
+                                    <h4 style="color:#374151;margin-bottom:15px">📧 Información de Contacto y Envío</h4>
+                                    
+                                    <div style="display:flex;gap:10px;margin-bottom:10px">
+                                        <input type="text" id="job-company" placeholder="Empresa" required style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                        <input type="text" id="job-contact-name" placeholder="Nombre del contacto" required style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                    </div>
+
+                                    <div style="display:flex;gap:10px;margin-bottom:10px">
+                                        <input type="email" id="job-contact-email" placeholder="Correo electrónico" required style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                        <input type="text" id="job-cell-area" placeholder="Célula / Área" style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                    </div>
+
+                                    <div style="display:flex;gap:10px;margin-bottom:10px">
+                                        <input type="text" id="job-office-location" placeholder="Ubicación de oficinas" style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                        <select id="job-work-modality" style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                                            <option value="">Modalidad de trabajo...</option>
+                                            <option value="Presencial">Presencial</option>
+                                            <option value="Remoto">Remoto</option>
+                                            <option value="Híbrido">Híbrido</option>
+                                        </select>
+                                    </div>
+
+                                    <div style="display:flex;gap:10px;margin-bottom:10px">
+                                        <input type="number" id="job-salary" placeholder="Sueldo" step="0.01" min="0" style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                        <select id="job-status" style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                                            <option value="Activa">📍 Activa</option>
+                                            <option value="Inactiva">❌ Inactiva</option>
+                                            <option value="Cubierta">✅ Cubierta</option>
+                                            <option value="Cancelada">🚫 Cancelada</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Pestaña 2: Perfil -->
+                            <div id="tab-job-opening-perfil" class="tab-content">
+                                <div style="padding:20px 0">
+                                    <h4 style="color:#374151;margin-bottom:15px">👤 Perfil Requerido</h4>
+                                    
+                                    <div style="display:flex;gap:10px;margin-bottom:10px">
+                                        <input type="text" id="job-position-name" placeholder="Nombre del puesto" required style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                        <input type="text" id="job-role" placeholder="Rol" style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                    </div>
+
+                                    <div style="display:flex;gap:10px;margin-bottom:10px">
+                                        <input type="text" id="job-years-experience" placeholder="Años de experiencia" style="flex:1;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                    </div>
+
+                                    <div style="margin-bottom:10px">
+                                        <label class="field-label">🛠️ Herramientas técnicas (una por línea)</label>
+                                        <textarea id="job-technical-tools" placeholder="Ej:&#10;- JavaScript&#10;- React&#10;- SQL" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff;font-family:monospace;min-height:100px;"></textarea>
+                                    </div>
+
+                                    <div style="margin-bottom:10px">
+                                        <label class="field-label">📚 Conocimientos básicos (una por línea)</label>
+                                        <textarea id="job-basic-knowledge" placeholder="Ej:&#10;- Programación orientada a objetos&#10;- Bases de datos&#10;- REST APIs" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff;font-family:monospace;min-height:100px;"></textarea>
+                                    </div>
+
+                                    <div style="margin-bottom:10px">
+                                        <label class="field-label">💡Co  deseables (opcional)</label>
+                                        <input type="text" id="job-desirable-code" placeholder="Ej: Senior, Full-Stack, Lead Developer" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Botones de acción -->
+                        <div style="margin-top:20px;padding-top:20px;border-top:1px solid #e6eef8;display:flex;gap:8px;justify-content:flex-end">
+                            <button type="button" id="job-opening-cancel" style="background:#6b7280;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer">Cancelar</button>
+                            <button type="submit" id="job-opening-submit" style="background:#3b82f6;color:white;border:none;padding:10px 20px;border-radius:6px;cursor:pointer">💾 Guardar Vacante</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <!-- Modal para el formulario de alta/edición -->
             <div id="employee-modal" class="modal" style="display:none">
                 <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
@@ -1115,18 +1260,18 @@
                                     <h4>Información Personal</h4>
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
-                                            <label for="employee-first" class="field-label">Nombre</label>
+                                            <label for="employee-first" class="field-label">Nombre *</label>
                                             <input type="text" id="employee-first" placeholder="Nombre" required>
                                         </div>
                                         <div style="flex:1">
-                                            <label for="employee-last" class="field-label">Apellido</label>
+                                            <label for="employee-last" class="field-label">Apellido *</label>
                                             <input type="text" id="employee-last" placeholder="Apellido" required>
                                         </div>
                                     </div>
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
                                             <label for="employee-code" class="field-label">Código empleado</label>
-                                            <input type="text" id="employee-code" placeholder="Código empleado (opcional)">
+                                            <input type="text" id="employee-code" placeholder="Código empleado (opcional)" disabled>
                                         </div>
                                         <div style="flex:1">
                                             <!-- Campo vacío para mantener el layout -->
@@ -1134,7 +1279,7 @@
                                     </div>
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
-                                            <label for="employee-position" class="field-label">Puesto / Rol</label>
+                                            <label for="employee-position" class="field-label">Puesto / Rol *</label>
                                             <select id="employee-position" required>
                                                 <option value="">Seleccionar posición...</option>
                                             </select>
@@ -1149,7 +1294,7 @@
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
                                             <label for="employee-area" class="field-label">Área</label>
-                                            <select id="employee-area">
+                                            <select id="employee-area" required>
                                                 <option value="">Seleccionar área...</option>
                                             </select>
                                         </div>
@@ -1168,7 +1313,7 @@
                                     </div>
                                     <div style="margin-top:6px">
                                         <label for="employee-status" class="field-label">Estado</label>
-                                        <select id="employee-status">
+                                        <select id="employee-status" required>
                                             <option value="Activo">Activo</option>
                                             <option value="Inactivo">Inactivo</option>
                                             <option value="En licencia">En licencia</option>
@@ -1180,8 +1325,8 @@
                                 <!-- Contacto -->
                                 <div class="form-section">
                                     <h4>Contacto</h4>
-                                    <label for="employee-email" class="field-label">Email</label>
-                                    <input type="email" id="employee-email" placeholder="Email (opcional)">
+                                    <label for="employee-email" class="field-label">Email *</label>
+                                    <input type="email" id="employee-email" placeholder="Email" required>
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
                                             <label for="employee-phone" class="field-label">Teléfono corporativo</label>

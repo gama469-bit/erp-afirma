@@ -30,7 +30,9 @@ async function runMigrations() {
       '020_create_project_assignments.sql',
       '021_fix_candidates_nullable.sql',
       '021_create_project_indexes.sql',
-      '022_create_project_assignment_indexes.sql'
+      '022_create_project_assignment_indexes.sql',
+      '023_add_recruitment_tracking.sql',
+      '024_create_job_openings.sql'
     ];
 
     for (const migration of migrations) {

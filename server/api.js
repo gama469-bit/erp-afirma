@@ -20,7 +20,7 @@ app.use((req, res, next) => {
     console.log(`🌐 CORS middleware - ${req.method} ${req.url}`);
   }
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   
   if (req.method === 'OPTIONS') {
@@ -427,11 +427,32 @@ app.get('/api/auth/roles', async (req, res) => {
 // List candidates
 app.get('/api/candidates', async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM candidates ORDER BY id DESC');
+    // Intentar con los campos recruited_by y hired_date; si no existen, ignorarlos y retornar sin ellos
+    const result = await db.query(`
+      SELECT id, first_name, last_name, email, phone, position_applied, status, notes, 
+             recruited_by, hired_date, created_at 
+      FROM candidates
+      WHERE status != 'Contratado' AND status != 'Deleted'
+      ORDER BY id DESC
+    `);
+    console.log('✅ [GET /api/candidates] Candidatos obtenidos', result.rows.length);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching candidates', err);
-    res.status(500).json({ error: 'Error fetching candidates' });
+    // Si falla porque el campo no existe, intentar sin él
+    if (err.message.includes('recruited_by') || err.message.includes('hired_date') || err.message.includes('column')) {
+      console.log('❌ Campo recruited_by o hired_date no existen aún, retornando sin ellos');
+      try {
+        const result = await db.query('SELECT * FROM candidates ORDER BY id DESC');
+        console.log('⚠️ Candidatos obtenidos', result.rows.length);
+        res.json(result.rows);
+      } catch (err2) {
+        console.error('❌ Error fetching candidates', err2);
+        res.status(500).json({ error: 'Error fetching candidates' });
+      }
+    } else {
+      console.error('❌ Error fetching candidates', err);
+      res.status(500).json({ error: 'Error fetching candidates' });
+    }
   }
 });
 
@@ -460,6 +481,7 @@ app.post('/api/candidates', async (req, res) => {
   }
 
   try {
+    // Crear candidato SIN recruited_by (se asignará solo cuando cambie a Contratado)
     const result = await db.query(
       `INSERT INTO candidates (first_name, last_name, email, phone, position_applied, status, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
@@ -475,7 +497,8 @@ app.post('/api/candidates', async (req, res) => {
 // Update candidate
 app.put('/api/candidates/:id', async (req, res) => {
   const id = req.params.id;
-  const { first_name, last_name, email, phone, position_applied, status, notes } = req.body;
+  const { first_name, last_name, email, phone, position_applied, status, notes, recruited_by, hired_date } = req.body;
+  
   
   // validate email if provided
   if (email) {
@@ -486,25 +509,92 @@ app.put('/api/candidates/:id', async (req, res) => {
   }
 
   try {
-    const result = await db.query(
-      `UPDATE candidates SET first_name=$1, last_name=$2, email=$3, phone=$4, position_applied=$5, status=$6, notes=$7 WHERE id=$8 RETURNING *`,
-      [first_name || null, last_name || null, email || null, phone || null, position_applied || null, status || null, notes || null, id]
-    );
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Candidate not found' });
-    res.json(result.rows[0]);
+    // Si el status cambia a "Contratado", guardar recruited_by y hired_date
+    // Si no, ignorar ambos
+    const finalRecruitedBy = (status === 'Contratado' && recruited_by) ? recruited_by : null;
+    const finalHiredDate = (status === 'Contratado' && hired_date) ? hired_date : null;
+    
+    console.log('🔧 Procesando: status=' + status + ', recruited_by=' + recruited_by + ', hired_date=' + hired_date);
+    console.log('🔧 Final values: finalRecruitedBy=' + finalRecruitedBy + ', finalHiredDate=' + finalHiredDate);
+    
+    // Intentar con recruited_by y hired_date
+    try {
+      const result = await db.query(
+        `UPDATE candidates SET first_name=$1, last_name=$2, email=$3, phone=$4, position_applied=$5, status=$6, notes=$7, recruited_by=$8, hired_date=$9 WHERE id=$10 RETURNING *`,
+        [first_name || null, last_name || null, email || null, phone || null, position_applied || null, status || null, notes || null, finalRecruitedBy, finalHiredDate, id]
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Candidate not found' });
+      console.log('✅ Candidato actualizado correctamente, recruited_by=' + result.rows[0].recruited_by + ', hired_date=' + result.rows[0].hired_date);
+      
+      // Si el candidato fue CONTRATADO, crear empleado automáticamente
+      if (status === 'Contratado' && first_name && last_name) {
+        console.log('👤 Intentando crear empleado desde candidato contratado...');
+        try {
+          // Resolver posición si existe
+          let positionId = null;
+          if (position_applied) {
+            const posResult = await findOrCreatePosition(position_applied, null);
+            positionId = posResult;
+          }
+          
+          // Crear empleado con los datos del candidato
+          const employeeResult = await db.query(`
+            INSERT INTO employees_v2 (
+              first_name, last_name, email, phone, 
+              position_id, hire_date, status, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING *
+          `, [
+            first_name,
+            last_name,
+            email || null,
+            phone || null,
+            positionId || null,
+            hired_date || new Date().toISOString().split('T')[0],
+            'Activo',
+            'candidatos'
+          ]);
+          
+          if (employeeResult.rowCount > 0) {
+            console.log('✅ Empleado creado automaticamente ID:', employeeResult.rows[0].id);
+            result.rows[0].employee_id = employeeResult.rows[0].id;
+          }
+        } catch (empErr) {
+          console.log('⚠️ No se pudo crear empleado automáticamente:', empErr.message);
+          // No es error crítico, continuamos
+        }
+      }
+      
+      return res.json(result.rows[0]);
+    } catch (err) {
+      // Si falla porque los campos no existen, actualizar sin ellos
+      if (err.message.includes('recruited_by') || err.message.includes('hired_date') || err.message.includes('column')) {
+        console.log('❌ Campo recruited_by o hired_date no existe, error:', err.message);
+        console.log('⚠️ Intentando actualizar sin los campos recruited_by y hired_date');
+        const result = await db.query(
+          `UPDATE candidates SET first_name=$1, last_name=$2, email=$3, phone=$4, position_applied=$5, status=$6, notes=$7 WHERE id=$8 RETURNING *`,
+          [first_name || null, last_name || null, email || null, phone || null, position_applied || null, status || null, notes || null, id]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Candidate not found' });
+        console.log('⚠️ Candidato actualizado SIN los campos recruited_by y hired_date (columnas no existen)');
+        return res.json(result.rows[0]);
+      }
+      throw err;
+    }
   } catch (err) {
-    console.error('Error updating candidate', err);
+    console.error('❌ Error actualizando candidato', err);
     res.status(500).json({ error: 'Error updating candidate' });
   }
 });
 
 // Delete candidate
-app.delete('/api/candidates/:id', async (req, res) => {
+app.patch('/api/candidates/:id', async (req, res) => {
   const id = req.params.id;
+  const { status } = req.body;
   try {
-    const result = await db.query('DELETE FROM candidates WHERE id = $1', [id]);
+    const result = await db.query('UPDATE candidates SET status=$1 WHERE id = $2 RETURNING *', [status, id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Candidate not found' });
-    res.json({ success: true });
+    res.json(result.rows[0]);
   } catch (err) {
     console.error('Error deleting candidate', err);
     res.status(500).json({ error: 'Error deleting candidate' });
@@ -2487,6 +2577,154 @@ app.get('/api/reports/assignment-summary', async (req, res) => {
   } catch (err) {
     console.error('Error fetching assignment summary:', err);
     res.status(500).json({ error: 'Error generating summary' });
+  }
+});
+
+// ============ JOB OPENINGS (VACANTES) ENDPOINTS ============
+
+// Get all job openings
+app.get('/api/job-openings', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT * FROM job_openings WHERE status != 'Deleted' ORDER BY created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching job openings:', err);
+    res.status(500).json({ error: 'Error fetching job openings' });
+  }
+});
+
+// Get single job opening
+app.get('/api/job-openings/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT * FROM job_openings WHERE id = $1`,
+      [id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Job opening not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error fetching job opening:', err);
+    res.status(500).json({ error: 'Error fetching job opening' });
+  }
+});
+
+// Create job opening
+app.post('/api/job-openings', async (req, res) => {
+  const {
+    // Sección 1: Datos para envío
+    company, contact_person_name, contact_email, cell_area, office_location, work_modality, salary,
+    // Sección 2: Perfil
+    position_name, role, years_experience, technical_tools, basic_knowledge, desirable_code,
+    // Metadatos
+    status, created_by
+  } = req.body;
+
+  // Validate required fields
+  if (!company || !contact_person_name || !contact_email || !position_name) {
+    return res.status(400).json({
+      error: 'Required fields: company, contact_person_name, contact_email, position_name'
+    });
+  }
+
+  try {
+    const result = await db.query(
+      `INSERT INTO job_openings (
+        company, contact_person_name, contact_email, cell_area, office_location, work_modality, salary,
+        position_name, role, years_experience, technical_tools, basic_knowledge, desirable_code,
+        status, created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      RETURNING *`,
+      [
+        company, contact_person_name, contact_email, cell_area || null, office_location || null,
+        work_modality || null, salary || null,
+        position_name, role || null, years_experience || null, technical_tools || null,
+        basic_knowledge || null, desirable_code || null,
+        status || 'Activa', created_by || 'system'
+      ]
+    );
+    
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating job opening:', err);
+    res.status(500).json({ error: 'Error creating job opening' });
+  }
+});
+
+// Update job opening
+app.put('/api/job-openings/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    company, contact_person_name, contact_email, cell_area, office_location, work_modality, salary,
+    position_name, role, years_experience, technical_tools, basic_knowledge, desirable_code,
+    status
+  } = req.body;
+
+  try {
+    const result = await db.query(
+      `UPDATE job_openings SET
+        company = COALESCE($1, company),
+        contact_person_name = COALESCE($2, contact_person_name),
+        contact_email = COALESCE($3, contact_email),
+        cell_area = COALESCE($4, cell_area),
+        office_location = COALESCE($5, office_location),
+        work_modality = COALESCE($6, work_modality),
+        salary = COALESCE($7, salary),
+        position_name = COALESCE($8, position_name),
+        role = COALESCE($9, role),
+        years_experience = COALESCE($10, years_experience),
+        technical_tools = COALESCE($11, technical_tools),
+        basic_knowledge = COALESCE($12, basic_knowledge),
+        desirable_code = COALESCE($13, desirable_code),
+        status = COALESCE($14, status),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $15
+       RETURNING *`,
+      [
+        company, contact_person_name, contact_email, cell_area, office_location,
+        work_modality, salary, position_name, role, years_experience,
+        technical_tools, basic_knowledge, desirable_code, status, id
+      ]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Job opening not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating job opening:', err);
+    res.status(500).json({ error: 'Error updating job opening' });
+  }
+});
+
+// Delete job opening
+app.patch('/api/job-openings/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  try {
+    const result = await db.query(
+      `UPDATE job_openings SET
+        status = COALESCE($1, status),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [ status, id ]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Job opening not found' });
+    }
+
+    res.json({ success: true, message: 'Job opening deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting job opening:', err);
+    res.status(500).json({ error: 'Error deleting job opening' });
   }
 });
 
