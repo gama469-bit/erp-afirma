@@ -1,4 +1,24 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    // Toggle sidebar
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebar = document.getElementById('sidebar');
+    const appShell = document.getElementById('app-shell');
+    
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            // Guardar estado en localStorage
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            localStorage.setItem('sidebarCollapsed', isCollapsed);
+        });
+        
+        // Restaurar estado del sidebar desde localStorage
+        const savedState = localStorage.getItem('sidebarCollapsed');
+        if (savedState === 'true') {
+            sidebar.classList.add('collapsed');
+        }
+    }
+    
         // Asociar botón de proyectos a la vista de importar OTs (solo una vez, sin duplicados)
         let otImportBtn = document.getElementById('ot-import-btn');
         if (otImportBtn && !otImportBtn.dataset.listenerAdded) {
@@ -1806,8 +1826,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>${proj.end_date ? proj.end_date.split('T')[0] : ''}</td>
                 <td><span style="background:${proj.status === 'Completado' ? '#10b981' : proj.status === 'En Progreso' ? '#3b82f6' : proj.status === 'Planificación' ? '#f59e0b' : '#6b7280'};color:white;padding:4px 8px;border-radius:4px;font-size:12px">${proj.status || ''}</span></td>
                 <td>
-                    <button class="btn-action-edit" data-id="${proj.id}">✏️</button>
-                    <button class="btn-action-delete" data-id="${proj.id}" style="margin-left:4px">🗑️</button>
+                    <button class="btn-action-view" data-id="${proj.id}" title="Ver detalles">👁️</button>
+                    <button class="btn-action-edit" data-id="${proj.id}" style="margin-left:4px" title="Editar">✏️</button>
+                    <button class="btn-action-delete" data-id="${proj.id}" style="margin-left:4px" title="Eliminar">🗑️</button>
                 </td>
             `;
             projectTableBody.appendChild(tr);
@@ -1815,8 +1836,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     projectTableBody?.addEventListener('click', async (e) => {
+        const viewBtn = e.target.closest('.btn-action-view');
         const editBtn = e.target.closest('.btn-action-edit');
         const delBtn = e.target.closest('.btn-action-delete');
+        if (viewBtn) {
+            const id = viewBtn.dataset.id;
+            const proj = allProjects.find(p => String(p.id) === String(id));
+            if (!proj) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Proyecto no encontrado',
+                    text: 'No se encontró el proyecto seleccionado'
+                });
+                return;
+            }
+            openProjectModal(true, proj, true); // viewOnly = true
+        }
         if (editBtn) {
             const id = editBtn.dataset.id;
             const proj = allProjects.find(p => String(p.id) === String(id));
@@ -1828,7 +1863,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 return;
             }
-            openProjectModal(true, proj);
+            openProjectModal(true, proj, false); // viewOnly = false
         }
         if (delBtn) {
             const id = delBtn.dataset.id;
@@ -1884,17 +1919,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     const projectForm = document.getElementById('project-form');
     const projectModalClose = document.getElementById('project-modal-close');
     const projectCancel = document.getElementById('project-cancel');
+    const otSectionToggle = document.getElementById('ot-section-toggle');
 
-    async function openProjectModal(isEdit = false, project = null) {
-        document.getElementById('project-modal-title').textContent = isEdit ? 'Editar Proyecto' : 'Nuevo Proyecto';
-        // Cargar responsables disponibles
-        await loadProjectManagers();
-
+    async function openProjectModal(isEdit = false, project = null, viewOnly = false) {
+        console.log('🔔 Abriendo modal de proyecto:', { isEdit, project, viewOnly });
+        document.getElementById('project-modal-title').textContent = viewOnly ? '👁️ Ver Proyecto' : (isEdit ? 'Editar Proyecto' : 'Nuevo Proyecto');
+        
+        // Guardar estado viewOnly en el modal
+        projectModal.dataset.viewOnly = viewOnly ? 'true' : 'false';
+        
+        // Cambiar texto del botón cancelar
+        const cancelBtn = document.getElementById('project-cancel');
+        if (cancelBtn) {
+            cancelBtn.textContent = viewOnly ? 'Cerrar' : 'Cancelar';
+        }
+        
+        // Resetear sección OTs (colapsada por defecto solo para nuevo proyecto)
+        const otContent = document.getElementById('ot-section-content');
+        const otArrow = document.getElementById('ot-section-arrow');
+        if (!isEdit) {
+            if (otContent) otContent.style.display = 'none';
+            if (otArrow) otArrow.style.transform = 'rotate(0deg)';
+        }
+        
         // OTs temporales para proyecto nuevo
         if (!isEdit) {
             projectForm.reset();
             document.getElementById('project-id').value = '';
             window.currentProjectOTs = [];
+            console.log('📋 Inicializando OTs vacías para proyecto nuevo');
             renderOTList([]);
         } else if (project) {
             console.log('📝 Loading project data for edit:', project);
@@ -1914,69 +1967,186 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('project-start-date').value = formatDate(project.start_date);
             document.getElementById('project-end-date').value = formatDate(project.end_date);
             document.getElementById('project-status').value = project.status || 'Planificación';
-            document.getElementById('project-manager').value = project.manager_id || '';
+            document.getElementById('project-manager').value = project.project_manager || '';
+            document.getElementById('project-leader').value = project.project_leader || '';
+            document.getElementById('cbt-responsible').value = project.cbt_responsible || '';
+            document.getElementById('user-assigned').value = project.user_assigned || '';
             // Cargar OTs del backend
             await loadAndRenderOTs(project.id);
             console.log('✅ Project data loaded');
         }
-        projectModal.style.display = 'flex';
-        // ========== ÓRDENES DE TRABAJO (OTs) ==========
-        window.currentProjectOTs = [];
-
-        async function loadAndRenderOTs(projectId) {
-            if (!projectId) {
-                renderOTList([]);
-                return;
-            }
-            try {
-                const url = window.getApiUrl ? window.getApiUrl(`/api/projects/${projectId}/orders-of-work`) : `/api/projects/${projectId}/orders-of-work`;
-                const res = await fetch(url);
-                if (!res.ok) throw new Error('Error al cargar OTs');
-                const data = await res.json();
-                window.currentProjectOTs = data;
-                renderOTList(data);
-            } catch (e) {
-                renderOTList([]);
-            }
-        }
-
-        function renderOTList(ots) {
-            const tbody = document.getElementById('ot-list-body');
-            const empty = document.getElementById('ot-list-empty');
-            tbody.innerHTML = '';
-            if (!ots || ots.length === 0) {
-                empty.style.display = 'block';
-                return;
-            }
-            empty.style.display = 'none';
-            ots.forEach((ot, idx) => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${ot.ot_code || ''}</td>
-                    <td>${ot.description || ''}</td>
-                    <td>${ot.status || ''}</td>
-                    <td>${ot.start_date || ''}</td>
-                    <td>${ot.end_date || ''}</td>
-                    <td><button class="btn-action-delete" data-ot-id="${ot.id || ''}" data-ot-idx="${idx}" title="Eliminar OT">🗑️</button></td>
-                `;
-                tbody.appendChild(tr);
+        
+        // Configurar modo de solo lectura
+        const formFields = projectForm.querySelectorAll('input, textarea, select');
+        const submitBtn = document.getElementById('project-submit');
+        const otFormElements = document.querySelectorAll('#ot-form input, #ot-form select, #ot-add-btn');
+        
+        if (viewOnly) {
+            // Deshabilitar todos los campos del formulario
+            formFields.forEach(field => field.disabled = true);
+            // Ocultar botón de guardar
+            if (submitBtn) submitBtn.style.display = 'none';
+            // Deshabilitar formulario de agregar OTs
+            otFormElements.forEach(el => {
+                if (el.tagName === 'A') {
+                    el.style.pointerEvents = 'none';
+                    el.style.opacity = '0.5';
+                } else {
+                    el.disabled = true;
+                }
             });
+            // Ocultar botones de eliminar OTs (debe hacerse después de renderizar)
+            setTimeout(() => {
+                const otDeleteButtons = document.querySelectorAll('#ot-list-body .btn-action-delete');
+                otDeleteButtons.forEach(btn => btn.style.display = 'none');
+            }, 100);
+            console.log('🔒 Modo solo lectura activado');
+        } else {
+            // Habilitar todos los campos
+            formFields.forEach(field => field.disabled = false);
+            // Mostrar botón de guardar
+            if (submitBtn) submitBtn.style.display = '';
+            // Habilitar formulario de agregar OTs
+            otFormElements.forEach(el => {
+                if (el.tagName === 'A') {
+                    el.style.pointerEvents = '';
+                    el.style.opacity = '';
+                } else {
+                    el.disabled = false;
+                }
+            });
+            // Mostrar botones de eliminar OTs
+            setTimeout(() => {
+                const otDeleteButtons = document.querySelectorAll('#ot-list-body .btn-action-delete');
+                otDeleteButtons.forEach(btn => btn.style.display = '');
+            }, 100);
+            console.log('✏️ Modo edición activado');
         }
+        
+        projectModal.style.display = 'flex';
+    }
 
-        // Agregar OT (sin submit de form)
-        document.getElementById('ot-add-btn')?.addEventListener('click', async function(e) {
-            const otCode = document.getElementById('ot-code').value.trim();
-            const otDescription = document.getElementById('ot-description').value.trim();
-            const otStatus = document.getElementById('ot-status').value;
-            const otStart = document.getElementById('ot-start-date').value;
-            const otEnd = document.getElementById('ot-end-date').value;
-            if (!otCode) {
-                Swal.fire({ icon: 'warning', title: 'Código OT requerido' });
+    async function loadAndRenderOTs(projectId) {
+        if (!projectId) {
+            renderOTList([]);
+            return;
+        }
+        try {
+            const url = window.getApiUrl ? window.getApiUrl(`/api/projects/${projectId}/orders-of-work`) : `/api/projects/${projectId}/orders-of-work`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Error al cargar OTs');
+            const data = await res.json();
+            window.currentProjectOTs = data;
+            renderOTList(data);
+            
+            // Expandir automáticamente la sección de OTs si hay OTs para mostrar
+            if (data && data.length > 0) {
+                const otContent = document.getElementById('ot-section-content');
+                const otArrow = document.getElementById('ot-section-arrow');
+                if (otContent) otContent.style.display = 'block';
+                if (otArrow) otArrow.style.transform = 'rotate(180deg)';
+                console.log('✨ Sección de OTs expandida automáticamente -', data.length, 'OTs encontradas');
+            }
+        } catch (e) {
+            renderOTList([]);
+        }
+    }
+
+    function renderOTList(ots) {
+        console.log('🎨 Renderizando lista de OTs:', ots);
+        const tbody = document.getElementById('ot-list-body');
+        const empty = document.getElementById('ot-list-empty');
+        
+        if (!tbody) {
+            console.error('❌ No se encontró el elemento ot-list-body');
+            return;
+        }
+        if (!empty) {
+            console.error('❌ No se encontró el elemento ot-list-empty');
+            return;
+        }
+        
+        tbody.innerHTML = '';
+        if (!ots || ots.length === 0) {
+            console.log('📭 No hay OTs, mostrando mensaje vacío');
+            empty.style.display = 'block';
+            return;
+        }
+        console.log('📝 Renderizando', ots.length, 'OTs');
+        empty.style.display = 'none';
+        ots.forEach((ot, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="padding:6px 8px;">${ot.ot_code || ''}</td>
+                <td style="padding:6px 8px;">${ot.description || ''}</td>
+                <td style="padding:6px 8px;">${ot.status || ''}</td>
+                <td style="padding:6px 8px;">${ot.start_date || ''}</td>
+                <td style="padding:6px 8px;">${ot.end_date || ''}</td>
+                <td style="padding:6px 8px;"><button class="btn-action-delete" data-ot-id="${ot.id || ''}" data-ot-idx="${idx}" title="Eliminar OT">🗑️</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+        console.log('✅ OTs renderizadas correctamente');
+    }
+
+    // Prevenir submit del formulario OT usando event delegation
+    document.addEventListener('submit', function(e) {
+        if (e.target && e.target.id === 'ot-form') {
+            console.log('⚠️ Formulario OT intentó hacer submit - prevenido');
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+    });
+
+    // Agregar OT - Usando anchor tag con event delegation
+    document.addEventListener('click', async function(e) {
+        // Verificar si el click fue en el enlace Agregar OT
+        const target = e.target;
+        if (target.id === 'ot-add-btn' || target.closest('#ot-add-btn')) {
+            console.log('🔔 Botón Agregar OT clickeado');
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Buscar los elementos dinámicamente
+            const otCodeEl = document.getElementById('ot-code');
+            const otDescEl = document.getElementById('ot-description');
+            const otStatusEl = document.getElementById('ot-status');
+            const otStartEl = document.getElementById('ot-start-date');
+            const otEndEl = document.getElementById('ot-end-date');
+            
+            console.log('🔍 Elementos encontrados:', {
+                otCode: !!otCodeEl,
+                otDesc: !!otDescEl,
+                otStatus: !!otStatusEl,
+                otStart: !!otStartEl,
+                otEnd: !!otEndEl
+            });
+            
+            if (!otCodeEl) {
+                console.error('❌ No se encontró el campo ot-code');
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se encontró el formulario de OT. Por favor, intenta cerrar y abrir el modal nuevamente.' });
                 return;
             }
-            const projectId = document.getElementById('project-id').value;
+            
+            const otCode = otCodeEl.value.trim();
+            const otDescription = otDescEl?.value.trim() || '';
+            const otStatus = otStatusEl?.value || 'Pendiente';
+            const otStart = otStartEl?.value || '';
+            const otEnd = otEndEl?.value || '';
+            
+            console.log('📝 Datos de OT:', { otCode, otDescription, otStatus, otStart, otEnd });
+            
+            if (!otCode) {
+                Swal.fire({ icon: 'warning', title: 'Código OT requerido', text: 'Por favor ingresa un código para la OT' });
+                return;
+            }
+            const projectId = document.getElementById('project-id')?.value || '';
+            console.log('🆔 Project ID:', projectId);
+            
             if (projectId) {
                 // POST a API
+                console.log('💾 Guardando OT en backend...');
                 const res = await fetch((window.getApiUrl ? window.getApiUrl(`/api/projects/${projectId}/orders-of-work`) : `/api/projects/${projectId}/orders-of-work`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1990,12 +2160,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 if (res.ok) {
                     const data = await res.json();
+                    console.log('✅ OT guardada en backend:', data);
+                    if (!window.currentProjectOTs) window.currentProjectOTs = [];
                     window.currentProjectOTs.push(data);
+                    console.log('📋 Total OTs:', window.currentProjectOTs.length);
                     renderOTList(window.currentProjectOTs);
-                    document.getElementById('ot-form').reset();
+                    const otForm = document.getElementById('ot-form');
+                    if (otForm) otForm.reset();
+                    Swal.fire({ title: 'Agregando OT...', timer: 1000, showConfirmButton: false });
+                } else {
+                    console.error('❌ Error al guardar OT:', res.status);
+                    Swal.fire({ icon: 'error', title: 'Error al guardar OT' });
                 }
             } else {
                 // Proyecto nuevo: guardar en memoria
+                console.log('💾 Guardando OT en memoria (proyecto nuevo)...');
+                if (!window.currentProjectOTs) window.currentProjectOTs = [];
                 window.currentProjectOTs.push({
                     ot_code: otCode,
                     description: otDescription,
@@ -2003,13 +2183,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                     start_date: otStart,
                     end_date: otEnd
                 });
+                console.log('✅ OT agregada a memoria:', window.currentProjectOTs);
+                console.log('📋 Total OTs:', window.currentProjectOTs.length);
                 renderOTList(window.currentProjectOTs);
-                document.getElementById('ot-form').reset();
+                document.getElementById('ot-form')?.reset();
+                Swal.fire({ title: 'Agregando OT...', timer: 1000, showConfirmButton: false });
             }
-        });
+        }
+    });
 
-        // Eliminar OT
-        document.getElementById('ot-list-body')?.addEventListener('click', async function(e) {
+    // Eliminar OT - Usando event delegation
+    document.getElementById('ot-list-body')?.addEventListener('click', async function(e) {
             if (e.target.matches('button[data-ot-id]')) {
                 const otId = e.target.getAttribute('data-ot-id');
                 const otIdx = e.target.getAttribute('data-ot-idx');
@@ -2028,10 +2212,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         });
-    }
 
     async function closeProjectModal(skipConfirmation = false) {
-        if (!skipConfirmation) {
+        console.log('🔒 Cerrando modal de proyecto, skipConfirmation:', skipConfirmation);
+        const isViewOnly = projectModal.dataset.viewOnly === 'true';
+        
+        // Si está en modo viewOnly, no mostrar confirmación
+        if (!skipConfirmation && !isViewOnly) {
             const result = await Swal.fire({
                 title: '¿Cancelar proyecto?',
                 text: 'Los cambios no guardados se perderán',
@@ -2042,27 +2229,58 @@ document.addEventListener('DOMContentLoaded', async () => {
                 confirmButtonColor: '#d33',
                 cancelButtonColor: '#3085d6'
             });
-            if (!result.isConfirmed) return;
+            if (!result.isConfirmed) {
+                console.log('❌ Usuario canceló el cierre del modal');
+                return;
+            }
         }
+        console.log('✅ Cerrando modal...');
         projectModal.style.display = 'none';
         projectForm.reset();
+        
+        // Resetear texto del botón cancelar
+        const cancelBtn = document.getElementById('project-cancel');
+        if (cancelBtn) cancelBtn.textContent = 'Cancelar';
+        
+        // Resetear estado viewOnly
+        projectModal.dataset.viewOnly = 'false';
+        
+        // Resetear sección OTs
+        const otContent = document.getElementById('ot-section-content');
+        const otArrow = document.getElementById('ot-section-arrow');
+        if (otContent) otContent.style.display = 'none';
+        if (otArrow) otArrow.style.transform = 'rotate(0deg)';
     }
 
-    async function loadProjectManagers() {
-        const select = document.getElementById('project-manager');
-        const employees = await (window.fetchEmployees ? window.fetchEmployees() : []);
-        select.innerHTML = '<option value="">Seleccionar responsable...</option>';
-        employees.forEach(emp => {
-            const opt = document.createElement('option');
-            opt.value = emp.id;
-            opt.textContent = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
-            select.appendChild(opt);
-        });
-    }
+    // Toggle de sección OTs
+    otSectionToggle?.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('🔘 Toggle OT section clicked');
+        const content = document.getElementById('ot-section-content');
+        const arrow = document.getElementById('ot-section-arrow');
+        if (content.style.display === 'none' || content.style.display === '') {
+            console.log('📂 Abriendo sección OT');
+            content.style.display = 'block';
+            arrow.style.transform = 'rotate(180deg)';
+        } else {
+            console.log('📁 Cerrando sección OT');
+            content.style.display = 'none';
+            arrow.style.transform = 'rotate(0deg)';
+        }
+    });
 
     addProjectBtn?.addEventListener('click', () => openProjectModal(false));
-    projectModalClose?.addEventListener('click', async () => await closeProjectModal());
-    projectCancel?.addEventListener('click', async () => await closeProjectModal());
+    projectModalClose?.addEventListener('click', async () => {
+        console.log('❌ Close button clicked');
+        await closeProjectModal();
+    });
+    projectCancel?.addEventListener('click', async (e) => {
+        console.log('🚫 Cancel button clicked', e);
+        e.preventDefault();
+        e.stopPropagation();
+        await closeProjectModal();
+    });
     projectModal?.addEventListener('click', async (e) => {
         if (e.target === projectModal) await closeProjectModal();
     });
@@ -2076,7 +2294,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const startDate = document.getElementById('project-start-date').value;
         const endDate = document.getElementById('project-end-date').value;
         const status = document.getElementById('project-status').value;
-        const managerId = document.getElementById('project-manager').value;
+        const projectManager = document.getElementById('project-manager').value;
+        const projectLeader = document.getElementById('project-leader').value;
+        const cbtResponsible = document.getElementById('cbt-responsible').value;
+        const userAssigned = document.getElementById('user-assigned').value;
 
         if (!name || !startDate) {
             Swal.fire({
@@ -2094,7 +2315,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 start_date: startDate,
                 end_date: endDate,
                 status,
-                manager_id: managerId ? parseInt(managerId) : null
+                project_manager: projectManager || null,
+                project_leader: projectLeader || null,
+                cbt_responsible: cbtResponsible || null,
+                user_assigned: userAssigned || null
             };
 
             const url = projectId 
