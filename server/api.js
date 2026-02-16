@@ -1954,7 +1954,8 @@ app.delete('/api/vacations/:id', async (req, res) => {
 app.get('/api/projects', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT p.id, p.name, p.area_id, p.description, p.created_at,
+      `SELECT p.id, p.name, p.area_id, p.description, p.created_at, 
+              p.start_date, p.end_date, p.status, p.manager_id,
               mc.item as area_name
        FROM projects p
        LEFT JOIN mastercode mc ON p.area_id = mc.id AND mc.lista = 'Areas'
@@ -2022,6 +2023,7 @@ app.get('/api/projects/:id/assignments', async (req, res) => {
               END as status
        FROM project_assignments pa
        INNER JOIN employees_v2 e ON pa.employee_id = e.id
+       INNER JOIN projects p ON pa.project_id = p.id
        LEFT JOIN mastercode mc_position ON e.position_id = mc_position.id
        LEFT JOIN mastercode mc_area ON e.area_id = mc_area.id
        LEFT JOIN mastercode mc_entity ON e.entity_id = mc_entity.id
@@ -2036,12 +2038,288 @@ app.get('/api/projects/:id/assignments', async (req, res) => {
   }
 });
 
+// Crear nueva OT para un proyecto
+app.post('/api/projects/:projectId/orders-of-work', async (req, res) => {
+  const { projectId } = req.params;
+  const { 
+    ot_code, description, status, start_date, end_date,
+    folio_principal_santec, folio_santec, nombre_proyecto,
+    tipo_servicio, tecnologia, aplicativo,
+    fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
+    horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
+    autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+    fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
+    ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
+    costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
+    clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
+    fecha_vobo_front_negocio, horas, porcentaje_ejecucion
+  } = req.body;
+  
+  if (!ot_code) {
+    return res.status(400).json({ error: 'Campo ot_code requerido' });
+  }
+  
+  try {
+    const result = await db.query(
+      `INSERT INTO orders_of_work (
+        project_id, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
+        status, description, tipo_servicio, tecnologia, aplicativo,
+        fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
+        horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
+        autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+        fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
+        ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
+        costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
+        clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
+        fecha_vobo_front_negocio, horas, porcentaje_ejecucion, start_date, end_date
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43
+      )
+      RETURNING *`,
+      [
+        projectId, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
+        status || 'Pendiente', description, tipo_servicio, tecnologia, aplicativo,
+        fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
+        horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
+        autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+        fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
+        ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
+        costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
+        clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
+        fecha_vobo_front_negocio, horas, porcentaje_ejecucion, start_date, end_date
+      ]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating order of work:', err);
+    res.status(500).json({ error: 'Error creating order of work', details: err.message });
+  }
+});
+
+// Actualizar OT
+app.put('/api/orders-of-work/:id', async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  
+  // Crear la lista de campos a actualizar dinámicamente
+  const allowedFields = [
+    'ot_code', 'description', 'status', 'start_date', 'end_date',
+    'folio_principal_santec', 'folio_santec', 'nombre_proyecto',
+    'tipo_servicio', 'tecnologia', 'aplicativo',
+    'fecha_inicio_santander', 'fecha_fin_santander', 'fecha_inicio_proveedor', 'fecha_fin_proveedor',
+    'horas_acordadas', 'semaforo_esfuerzo', 'semaforo_plazo', 'lider_delivery',
+    'autorizacion_rdp', 'responsable_proyecto', 'cbt_responsable', 'proveedor',
+    'fecha_inicio_real', 'fecha_fin_real', 'fecha_entrega_proveedor', 'dias_desvio_entrega',
+    'ambiente', 'fecha_creacion', 'fts', 'estimacion_elab_pruebas',
+    'costo_hora_servicio_proveedor', 'monto_servicio_proveedor', 'monto_servicio_proveedor_iva',
+    'clase_coste', 'folio_pds', 'programa', 'front_negocio', 'vobo_front_negocio',
+    'fecha_vobo_front_negocio', 'horas', 'porcentaje_ejecucion'
+  ];
+  
+  const setFields = [];
+  const values = [id];
+  let paramIndex = 2;
+  
+  for (const field of allowedFields) {
+    if (updates.hasOwnProperty(field)) {
+      setFields.push(`${field} = $${paramIndex}`);
+      values.push(updates[field]);
+      paramIndex++;
+    }
+  }
+  
+  if (setFields.length === 0) {
+    return res.status(400).json({ error: 'No hay campos para actualizar' });
+  }
+  
+  setFields.push('updated_at = CURRENT_TIMESTAMP');
+  
+  try {
+    const query = `UPDATE orders_of_work SET ${setFields.join(', ')} WHERE id = $1 RETURNING *`;
+    const result = await db.query(query, values);
+    
+    if (result.rowCount === 0) return res.status(404).json({ error: 'OT no encontrada' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating order of work:', err);
+    res.status(500).json({ error: 'Error updating order of work', details: err.message });
+  }
+});
+
+// Eliminar OT
+app.delete('/api/orders-of-work/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM orders_of_work WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'OT no encontrada' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting order of work:', err);
+    res.status(500).json({ error: 'Error deleting order of work' });
+  }
+});
+
+// Listar todas las OTs
+app.get('/api/orders-of-work', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT ow.*, p.name as project_name 
+      FROM orders_of_work ow
+      LEFT JOIN projects p ON ow.project_id = p.id
+      ORDER BY ow.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching orders of work:', err);
+    res.status(500).json({ error: 'Error fetching orders of work' });
+  }
+});
+
+// Listar OTs por proyecto
+app.get('/api/projects/:projectId/orders-of-work', async (req, res) => {
+  const { projectId } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT * FROM orders_of_work 
+      WHERE project_id = $1 
+      ORDER BY created_at DESC
+    `, [projectId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching project orders:', err);
+    res.status(500).json({ error: 'Error fetching project orders' });
+  }
+});
+
+// Importación masiva de OTs desde CSV/Excel
+app.post('/api/orders-of-work/import', async (req, res) => {
+  const { orders } = req.body;
+  
+  if (!Array.isArray(orders) || orders.length === 0) {
+    return res.status(400).json({ error: 'Se requiere un array de órdenes de trabajo' });
+  }
+
+  const results = { success: [], failed: [], warnings: [] };
+
+  try {
+    for (const order of orders) {
+      const { 
+        project_id,
+        ot_code,
+        folio_principal_santec,
+        folio_santec,
+        nombre_proyecto,
+        status,
+        description,
+        tipo_servicio,
+        tecnologia,
+        aplicativo,
+        fecha_inicio_santander,
+        fecha_fin_santander,
+        fecha_inicio_proveedor,
+        fecha_fin_proveedor,
+        horas_acordadas,
+        semaforo_esfuerzo,
+        semaforo_plazo,
+        lider_delivery,
+        autorizacion_rdp,
+        responsable_proyecto,
+        cbt_responsable,
+        proveedor,
+        fecha_inicio_real,
+        fecha_fin_real,
+        fecha_entrega_proveedor,
+        dias_desvio_entrega,
+        ambiente,
+        fecha_creacion,
+        fts,
+        estimacion_elab_pruebas,
+        costo_hora_servicio_proveedor,
+        monto_servicio_proveedor,
+        monto_servicio_proveedor_iva,
+        clase_coste,
+        folio_pds,
+        programa,
+        front_negocio,
+        vobo_front_negocio,
+        fecha_vobo_front_negocio,
+        horas,
+        porcentaje_ejecucion
+      } = order;
+
+      // Validar campos requeridos
+      if (!ot_code) {
+        results.failed.push({ order, error: 'Número OT es requerido' });
+        continue;
+      }
+
+      if (!project_id) {
+        results.failed.push({ order, error: 'ID de proyecto es requerido' });
+        continue;
+      }
+
+      try {
+        const insertResult = await db.query(`
+          INSERT INTO orders_of_work (
+            project_id, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
+            status, description, tipo_servicio, tecnologia, aplicativo,
+            fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
+            horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
+            autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+            fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
+            ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
+            costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
+            clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
+            fecha_vobo_front_negocio, horas, porcentaje_ejecucion
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+            $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41
+          )
+          RETURNING *
+        `, [
+          project_id, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
+          status || 'Pendiente', description, tipo_servicio, tecnologia, aplicativo,
+          fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
+          horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
+          autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+          fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
+          ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
+          costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
+          clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
+          fecha_vobo_front_negocio, horas, porcentaje_ejecucion
+        ]);
+
+        results.success.push(insertResult.rows[0]);
+      } catch (dbErr) {
+        console.error('Error inserting order:', dbErr);
+        results.failed.push({ order, error: dbErr.message });
+      }
+    }
+
+    res.json({
+      message: `Importación completada: ${results.success.length} exitosas, ${results.failed.length} fallidas`,
+      results
+    });
+  } catch (err) {
+    console.error('Error in bulk import:', err);
+    res.status(500).json({ error: 'Error en importación masiva', details: err.message });
+  }
+});
+
 // Get single project
 app.get('/api/projects/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(
       `SELECT p.id, p.name, p.area_id, p.description, p.created_at,
+              p.start_date, p.end_date, p.status, p.manager_id,
               mc.item as area_name
        FROM projects p
        LEFT JOIN mastercode mc ON p.area_id = mc.id AND mc.lista = 'Areas'
@@ -2060,40 +2338,65 @@ app.get('/api/projects/:id', async (req, res) => {
 
 // Create project
 app.post('/api/projects', async (req, res) => {
-  const { name, description, area_id } = req.body;
+  const { name, description, area_id, start_date, end_date, status, manager_id } = req.body;
   
   if (!name) {
     return res.status(400).json({ error: 'Required field: name' });
   }
   
+  if (!start_date) {
+    return res.status(400).json({ error: 'Required field: start_date' });
+  }
+  
   try {
     const result = await db.query(
-      `INSERT INTO projects (name, area_id, description)
-       VALUES ($1, $2, $3)
-       RETURNING id, name, area_id, description, created_at`,
-      [name, area_id || null, description || null]
+      `INSERT INTO projects (name, area_id, description, start_date, end_date, status, manager_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, name, area_id, description, start_date, end_date, status, manager_id, created_at`,
+      [
+        name, 
+        area_id || null, 
+        description || null, 
+        start_date,
+        end_date || null,
+        status || 'Planificación',
+        manager_id || null
+      ]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Error creating project:', err);
-    res.status(500).json({ error: 'Error creating project' });
+    res.status(500).json({ error: 'Error creating project', details: err.message });
   }
 });
 
 // Update project
 app.put('/api/projects/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, description, area_id } = req.body;
+  const { name, description, area_id, start_date, end_date, status, manager_id } = req.body;
   
   try {
     const result = await db.query(
       `UPDATE projects 
        SET name = COALESCE($1, name), 
            area_id = COALESCE($2, area_id), 
-           description = COALESCE($3, description)
-       WHERE id = $4
-       RETURNING id, name, area_id, description, created_at`,
-      [name || null, area_id || null, description || null, id]
+           description = COALESCE($3, description),
+           start_date = COALESCE($4, start_date),
+           end_date = $5,
+           status = COALESCE($6, status),
+           manager_id = $7
+       WHERE id = $8
+       RETURNING id, name, area_id, description, start_date, end_date, status, manager_id, created_at`,
+      [
+        name || null, 
+        area_id || null, 
+        description || null,
+        start_date || null,
+        end_date || null,
+        status || null,
+        manager_id || null,
+        id
+      ]
     );
     
     if (result.rowCount === 0) {
@@ -2103,7 +2406,7 @@ app.put('/api/projects/:id', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error updating project:', err);
-    res.status(500).json({ error: 'Error updating project' });
+    res.status(500).json({ error: 'Error updating project', details: err.message });
   }
 });
 

@@ -130,6 +130,8 @@
                 <a href="#" data-view="inventario-equipos">Inventario de Equipos</a>
                 <a href="#" data-view="vacaciones">Vacaciones</a>
                 <a href="#" data-view="proyectos">Proyectos</a>
+                <a href="#" data-view="ordenes-trabajo">Órdenes de Trabajo</a>
+                <a href="#" data-view="importar-ots">Importar OTs</a>
                 <a href="#" data-view="asignaciones">Asignaciones</a>
                 <a href="#" data-view="reportes">Reportes</a>
                 <a href="#" data-view="catalogos">Catálogos</a>
@@ -139,6 +141,108 @@
         </aside>
 
         <main class="content">
+                        <!-- Vista para importar OTs desde Excel -->
+                        <section id="importar-ots" class="card view" style="display:none;max-width:700px;margin:0 auto;">
+                            <h2>Importar OTs desde Excel</h2>
+                            <div style="margin-bottom:16px;">
+                                <button type="button" id="ot-template-btn" class="btn-add">📥 Descargar plantilla ejemplo</button>
+                            </div>
+                            <div style="margin-bottom:16px;">
+                                <input type="file" id="ot-import-file-standalone" accept=".xlsx,.xls,.csv">
+                            </div>
+                            <div id="ot-import-preview-area" style="display:none;">
+                                <h3>Previsualización y edición</h3>
+                                <table id="ot-import-preview-table" style="width:100%;border-collapse:collapse;">
+                                    <thead>
+                                        <tr>
+                                            <th>Número OT</th>
+                                            <th>Folio Principal Santec</th>
+                                            <th>Folio Santec</th>
+                                            <th>Nombre Proyecto</th>
+                                            <th>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div style="margin-top:16px;display:flex;gap:8px;">
+                                <button type="button" id="ot-import-save-btn" class="btn-add" style="display:none;">Guardar OTs</button>
+                                <button type="button" id="ot-import-cancel-btn" class="btn-cancel" style="display:none;">Cancelar</button>
+                            </div>
+                        </section>
+
+            <!-- Vista de Órdenes de Trabajo -->
+            <section id="ordenes-trabajo" class="card view" style="display:none;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                    <h2 style="margin:0">Órdenes de Trabajo (OTs)</h2>
+                    <button type="button" onclick="document.querySelector('[data-view=importar-ots]').click()" class="btn-add">📥 Importar OTs</button>
+                </div>
+                
+                <!-- Filtros -->
+                <div class="filters-container">
+                    <input type="text" id="filter-ot-code" placeholder="🔍 Buscar por Número OT..." class="filter-input">
+                    <select id="filter-ot-project" class="filter-input">
+                        <option value="">📁 Todos los proyectos</option>
+                    </select>
+                    <select id="filter-ot-status" class="filter-input">
+                        <option value="">📊 Todos los estados</option>
+                        <option value="Pendiente">Pendiente</option>
+                        <option value="En Progreso">En Progreso</option>
+                        <option value="Completada">Completada</option>
+                    </select>
+                    <button type="button" id="filter-ot-search-btn" class="filter-search-btn">🔍 Buscar</button>
+                    <button type="button" id="filter-ot-clear-btn" class="filter-clear-btn">🔄 Limpiar</button>
+                </div>
+                
+                <!-- Grid de OTs -->
+                <div class="employee-grid-container">
+                    <div id="ot-grid-loading" style="text-align:center;padding:40px;color:#666">
+                        <div>Cargando órdenes de trabajo...</div>
+                    </div>
+                    <div class="employee-grid-wrapper" style="overflow-x:auto;">
+                        <table class="employee-table" id="ot-table" style="display:none;">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:130px">🔢 Número OT</th>
+                                    <th style="min-width:120px">📋 Folio Principal</th>
+                                    <th style="min-width:120px">📄 Folio Santec</th>
+                                    <th style="min-width:180px">📁 Proyecto</th>
+                                    <th style="min-width:100px">📊 Estado</th>
+                                    <th style="min-width:200px">📝 Descripción</th>
+                                    <th style="min-width:120px">🛠️ Tipo Servicio</th>
+                                    <th style="min-width:120px">💻 Tecnología</th>
+                                    <th style="min-width:120px">📱 Aplicativo</th>
+                                    <th style="min-width:120px">📅 Inicio Proveedor</th>
+                                    <th style="min-width:120px">📅 Fin Proveedor</th>
+                                    <th style="min-width:150px">👤 Líder Delivery</th>
+                                    <th style="min-width:150px">👔 Responsable</th>
+                                    <th style="min-width:150px">🏢 CBT Responsable</th>
+                                    <th style="min-width:130px">💰 Monto Servicio</th>
+                                    <th style="min-width:130px">💵 Monto con IVA</th>
+                                    <th style="min-width:100px">⏱️ Horas</th>
+                                    <th style="min-width:100px">📈 % Ejecución</th>
+                                    <th style="min-width:150px">⚙️ Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ot-table-body">
+                                <!-- Se llenará dinámicamente -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="ot-grid-empty" style="display:none;text-align:center;padding:40px;color:#999">
+                        <div style="font-size:48px;margin-bottom:10px">📋</div>
+                        <div style="font-size:18px;margin-bottom:5px">No hay órdenes de trabajo registradas</div>
+                        <div style="font-size:14px">Haz clic en "Importar OTs" para comenzar</div>
+                    </div>
+                    <div id="ot-grid-error" style="display:none;text-align:center;padding:40px;color:#dc3545">
+                        <div style="font-size:48px;margin-bottom:10px">⚠️</div>
+                        <div style="font-size:18px;margin-bottom:5px">Error al cargar órdenes de trabajo</div>
+                        <div style="font-size:14px" id="ot-error-message">Problema de conexión con la API</div>
+                        <button type="button" onclick="window.loadOrdersOfWork()" style="margin-top:15px;background:#007bff;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer">🔄 Reintentar</button>
+                    </div>
+                </div>
+            </section>
+
             <div id="health-status" style="display:flex;gap:12px;align-items:center;background:#f8fafc;border:1px solid #e6eef8;border-radius:8px;padding:8px 12px;margin-bottom:12px;color:#374151">
                 <div><strong>Frontend:</strong> <span id="health-frontend">verificando...</span></div>
                 <div><strong>API:</strong> <span id="health-api">verificando...</span></div>
@@ -430,7 +534,9 @@
             <section id="proyectos" class="card view" style="display:none;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
                     <h2 style="margin:0">Gestión de Proyectos</h2>
-                    <button type="button" id="add-project-btn" class="btn-add">+ Nuevo Proyecto</button>
+                    <div style="display:flex;align-items:center;gap:12px">
+                        <button type="button" id="add-project-btn" class="btn-add">+ Nuevo Proyecto</button>
+                    </div>
                 </div>
                 <div class="filters-container">
                     <select id="filter-project-status" class="filter-input">
@@ -507,8 +613,9 @@
                                 <input type="date" id="project-start-date" required style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
                             </div>
                             <div>
-                                <label style="display:block;margin-bottom:8px;font-weight:500;">Fecha Fin *</label>
-                                <input type="date" id="project-end-date" required style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                                <label style="display:block;margin-bottom:8px;font-weight:500;">Fecha Fin (Estimada)</label>
+                                <input type="date" id="project-end-date" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                                <small style="display:block;margin-top:4px;color:#6b7280">Opcional - Dejar vacío si no tiene fecha definida</small>
                             </div>
                         </div>
 
@@ -527,6 +634,41 @@
                             <select id="project-manager" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
                                 <option value="">Seleccionar responsable...</option>
                             </select>
+                        </div>
+
+                        <!-- Órdenes de Trabajo (OTs) -->
+                        <div style="margin-bottom:28px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:600;font-size:1.1em;">Órdenes de Trabajo (OTs)</label>
+                            <form id="ot-form" style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
+                                <input type="text" id="ot-code" placeholder="Código OT *" required style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                <input type="text" id="ot-description" placeholder="Descripción" style="flex:2;min-width:180px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                <select id="ot-status" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                    <option value="Pendiente">Pendiente</option>
+                                    <option value="En Progreso">En Progreso</option>
+                                    <option value="Completada">Completada</option>
+                                </select>
+                                <input type="date" id="ot-start-date" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                <input type="date" id="ot-end-date" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                <button type="button" id="ot-add-btn" class="btn-primary" style="padding:8px 16px;font-size:14px">+ Agregar OT</button>
+                            </form>
+                            <div id="ot-list-container" style="background:#f8fafc;border-radius:8px;padding:10px 0;max-height:180px;overflow-y:auto;border:1px solid #e6eef8;">
+                                <table style="width:100%;font-size:14px;">
+                                    <thead>
+                                        <tr style="background:#f1f5f9">
+                                            <th style="padding:6px 8px;">Código</th>
+                                            <th style="padding:6px 8px;">Descripción</th>
+                                            <th style="padding:6px 8px;">Estado</th>
+                                            <th style="padding:6px 8px;">Inicio</th>
+                                            <th style="padding:6px 8px;">Fin</th>
+                                            <th style="padding:6px 8px;">Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ot-list-body">
+                                        <!-- OTs se llenan dinámicamente -->
+                                    </tbody>
+                                </table>
+                                <div id="ot-list-empty" style="text-align:center;color:#999;padding:12px;display:none">No hay OTs registradas</div>
+                            </div>
                         </div>
 
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -786,10 +928,10 @@
                 <!-- Tabs de Reportes -->
                 <div class="tab-container">
                     <div class="tab-buttons">
-                        <button type="button" class="tab-button active" onclick="switchReportTab('resources-by-project')">Recursos por Proyecto</button>
-                        <button type="button" class="tab-button" onclick="switchReportTab('projects-by-resource')">Proyectos por Recurso</button>
-                        <button type="button" class="tab-button" onclick="switchReportTab('top-projects')">Top Proyectos</button>
-                        <button type="button" class="tab-button" onclick="switchReportTab('top-resources')">Top Recursos</button>
+                        <button type="button" class="tab-button active" onclick="switchReportTab('resources-by-project', event)">Recursos por Proyecto</button>
+                        <button type="button" class="tab-button" onclick="switchReportTab('projects-by-resource', event)">Proyectos por Recurso</button>
+                        <button type="button" class="tab-button" onclick="switchReportTab('top-projects', event)">Top Proyectos</button>
+                        <button type="button" class="tab-button" onclick="switchReportTab('top-resources', event)">Top Recursos</button>
                     </div>
 
                     <!-- Tab: Recursos por Proyecto -->
@@ -895,16 +1037,16 @@
                     </div>
                     
                     <!-- Proyectos -->
-                    <div class="catalog-card" style="border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; background: #fff; cursor: pointer; transition: all 0.2s;" onclick="openCatalogManager('Proyecto')">
+                    <div class="catalog-card" style="border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; background: #fff; cursor: pointer; transition: all 0.2s;" onclick="showView('proyectos')">
                         <div style="display: flex; align-items: center; margin-bottom: 12px;">
                             <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-right: 12px;">
                                 <span style="color: white; font-size: 18px;">🚀</span>
                             </div>
                             <h3 style="margin: 0; color: #1f2937; font-size: 16px;">Proyectos</h3>
                         </div>
-                        <p style="color: #6b7280; font-size: 14px; margin: 0; line-height: 1.4;">Administra los proyectos y iniciativas activas</p>
+                        <p style="color: #6b7280; font-size: 14px; margin: 0; line-height: 1.4;">Gestiona proyectos completos y sus relaciones</p>
                         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f3f4f6;">
-                            <span style="color: #8b5cf6; font-size: 12px; font-weight: 500;">Click para gestionar →</span>
+                            <span style="color: #8b5cf6; font-size: 12px; font-weight: 500;">Ir a gestión avanzada →</span>
                         </div>
                     </div>
                     
