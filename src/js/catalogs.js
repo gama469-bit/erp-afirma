@@ -66,7 +66,7 @@ function openCatalogManager(catalogType) {
     header.style.background = `linear-gradient(135deg, ${config.color}, ${adjustColor(config.color, -20)})`;
     
     // Mostrar modal
-    modal.style.display = 'block';
+    modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     
     // Cargar elementos

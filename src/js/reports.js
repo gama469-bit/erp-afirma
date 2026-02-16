@@ -2,22 +2,41 @@
 
 let currentReportData = {};
 
+// Función helper para formatear fechas de forma segura
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '-';
+        return date.toLocaleDateString('es-MX', {year: '2-digit', month: '2-digit', day: '2-digit'});
+    } catch (e) {
+        return '-';
+    }
+}
+
+// Función helper para valores numéricos
+function formatNumber(value, defaultValue = 0) {
+    if (value === null || value === undefined || value === '') return defaultValue;
+    const num = Number(value);
+    return isNaN(num) ? defaultValue : num;
+}
+
 // Cargar resumen general
 async function loadReportsSummary() {
     try {
-        const response = await fetch(`${window.getApiUrl()}/api/reports/assignment-summary`);
+        const response = await fetch(window.getApiUrl('/api/reports/assignment-summary'));
         if (!response.ok) throw new Error('Error al cargar resumen');
         
         const data = await response.json();
         const summary = data.summary || {};
         
         // Actualizar cards de resumen
-        document.getElementById('summary-active-employees').textContent = summary.total_active_employees || 0;
-        document.getElementById('summary-active-projects').textContent = summary.total_active_projects || 0;
-        document.getElementById('summary-assigned-employees').textContent = summary.employees_with_active_assignments || 0;
-        document.getElementById('summary-bench-employees').textContent = summary.employees_in_bench || 0;
-        document.getElementById('summary-projects-with-assignments').textContent = summary.projects_with_active_assignments || 0;
-        document.getElementById('summary-total-hours').textContent = summary.total_active_hours || 0;
+        document.getElementById('summary-active-employees').textContent = formatNumber(summary.total_active_employees, 0);
+        document.getElementById('summary-active-projects').textContent = formatNumber(summary.total_active_projects, 0);
+        document.getElementById('summary-assigned-employees').textContent = formatNumber(summary.employees_with_active_assignments, 0);
+        document.getElementById('summary-bench-employees').textContent = formatNumber(summary.employees_in_bench, 0);
+        document.getElementById('summary-projects-with-assignments').textContent = formatNumber(summary.projects_with_active_assignments, 0);
+        document.getElementById('summary-total-hours').textContent = formatNumber(summary.total_active_hours, 0);
         
         // Guardar datos de top projects y resources
         currentReportData.topProjects = data.top_projects || [];
@@ -41,7 +60,7 @@ async function loadResourcesByProject() {
     if (containerEl) containerEl.innerHTML = '';
     
     try {
-        const response = await fetch(`${window.getApiUrl()}/api/reports/resources-by-project`);
+        const response = await fetch(window.getApiUrl('/api/reports/resources-by-project'));
         if (!response.ok) throw new Error('Error al cargar reporte');
         
         const projects = await response.json();
@@ -77,22 +96,22 @@ async function loadResourcesByProject() {
                                 </span>
                             </div>
                             <div style="text-align:right">
-                                <div style="font-size:24px;font-weight:bold;color:#007bff">${project.active_resources || 0}</div>
+                                <div style="font-size:24px;font-weight:bold;color:#007bff">${formatNumber(project.active_resources, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Recursos Activos</div>
                             </div>
                         </div>
                         
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:8px">
                             <div>
-                                <div style="font-size:18px;font-weight:bold;color:#6c757d">${project.total_resources || 0}</div>
+                                <div style="font-size:18px;font-weight:bold;color:#6c757d">${formatNumber(project.total_resources, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Total Recursos</div>
                             </div>
                             <div>
-                                <div style="font-size:18px;font-weight:bold;color:#28a745">${project.active_resources || 0}</div>
+                                <div style="font-size:18px;font-weight:bold;color:#28a745">${formatNumber(project.active_resources, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Activos</div>
                             </div>
                             <div>
-                                <div style="font-size:18px;font-weight:bold;color:#17a2b8">${project.total_active_hours || 0}</div>
+                                <div style="font-size:18px;font-weight:bold;color:#17a2b8">${formatNumber(project.total_active_hours, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Horas Activas</div>
                             </div>
                         </div>
@@ -116,11 +135,9 @@ async function loadResourcesByProject() {
                                             <td style="padding:8px">${r.position || '-'}</td>
                                             <td style="padding:8px">${r.role || '-'}</td>
                                             <td style="padding:8px;font-size:12px">
-                                                ${r.start_date ? new Date(r.start_date).toLocaleDateString('es-MX', {year: '2-digit', month: '2-digit', day: '2-digit'}) : '-'} 
-                                                → 
-                                                ${r.end_date ? new Date(r.end_date).toLocaleDateString('es-MX', {year: '2-digit', month: '2-digit', day: '2-digit'}) : '∞'}
+                                                ${formatDate(r.start_date)} → ${r.end_date ? formatDate(r.end_date) : '∞'}
                                             </td>
-                                            <td style="padding:8px">${r.hours_allocated || '-'}</td>
+                                            <td style="padding:8px">${formatNumber(r.hours_allocated, '-')}</td>
                                             <td style="padding:8px">
                                                 <span style="padding:4px 8px;border-radius:4px;font-size:11px;font-weight:500;
                                                     ${r.is_active ? 'background:#d4edda;color:#155724' : 'background:#f8d7da;color:#721c24'}">
@@ -165,7 +182,7 @@ async function loadProjectsByResource() {
     if (containerEl) containerEl.innerHTML = '';
     
     try {
-        const response = await fetch(`${window.getApiUrl()}/api/reports/projects-by-resource`);
+        const response = await fetch(window.getApiUrl('/api/reports/projects-by-resource'));
         if (!response.ok) throw new Error('Error al cargar reporte');
         
         const employees = await response.json();
@@ -200,22 +217,22 @@ async function loadProjectsByResource() {
                                 </div>
                             </div>
                             <div style="text-align:right">
-                                <div style="font-size:24px;font-weight:bold;color:#007bff">${employee.active_projects || 0}</div>
+                                <div style="font-size:24px;font-weight:bold;color:#007bff">${formatNumber(employee.active_projects, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Proyectos Activos</div>
                             </div>
                         </div>
                         
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:8px">
                             <div>
-                                <div style="font-size:18px;font-weight:bold;color:#6c757d">${employee.total_projects || 0}</div>
+                                <div style="font-size:18px;font-weight:bold;color:#6c757d">${formatNumber(employee.total_projects, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Total Proyectos</div>
                             </div>
                             <div>
-                                <div style="font-size:18px;font-weight:bold;color:#28a745">${employee.active_projects || 0}</div>
+                                <div style="font-size:18px;font-weight:bold;color:#28a745">${formatNumber(employee.active_projects, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Activos</div>
                             </div>
                             <div>
-                                <div style="font-size:18px;font-weight:bold;color:#17a2b8">${employee.total_active_hours || 0}</div>
+                                <div style="font-size:18px;font-weight:bold;color:#17a2b8">${formatNumber(employee.total_active_hours, 0)}</div>
                                 <div style="font-size:12px;color:#6b7280">Horas Activas</div>
                             </div>
                         </div>
@@ -240,11 +257,9 @@ async function loadProjectsByResource() {
                                             </td>
                                             <td style="padding:8px">${p.role || '-'}</td>
                                             <td style="padding:8px;font-size:12px">
-                                                ${p.start_date ? new Date(p.start_date).toLocaleDateString('es-MX', {year: '2-digit', month: '2-digit', day: '2-digit'}) : '-'} 
-                                                → 
-                                                ${p.end_date ? new Date(p.end_date).toLocaleDateString('es-MX', {year: '2-digit', month: '2-digit', day: '2-digit'}) : '∞'}
+                                                ${formatDate(p.start_date)} → ${p.end_date ? formatDate(p.end_date) : '∞'}
                                             </td>
-                                            <td style="padding:8px">${p.hours_allocated || '-'}</td>
+                                            <td style="padding:8px">${formatNumber(p.hours_allocated, '-')}</td>
                                             <td style="padding:8px">
                                                 <span style="padding:4px 8px;border-radius:4px;font-size:11px;font-weight:500;
                                                     ${p.is_active ? 'background:#d4edda;color:#155724' : 'background:#f8d7da;color:#721c24'}">
@@ -303,9 +318,9 @@ function renderTopProjects() {
                     ${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}`}
                 </span>
             </td>
-            <td>${project.name}</td>
+            <td>${project.name || 'Sin nombre'}</td>
             <td style="text-align:center">
-                <span style="font-size:18px;font-weight:bold;color:#007bff">${project.resource_count}</span>
+                <span style="font-size:18px;font-weight:bold;color:#007bff">${formatNumber(project.resource_count, 0)}</span>
             </td>
         </tr>
     `).join('');
@@ -334,19 +349,19 @@ function renderTopResources() {
                     ${index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}`}
                 </span>
             </td>
-            <td>${resource.employee_name}</td>
+            <td>${resource.employee_name || 'Sin nombre'}</td>
             <td style="text-align:center">
-                <span style="font-size:16px;font-weight:500;color:#6c757d">${resource.project_count}</span>
+                <span style="font-size:16px;font-weight:500;color:#6c757d">${formatNumber(resource.project_count, 0)}</span>
             </td>
             <td style="text-align:center">
-                <span style="font-size:16px;font-weight:500;color:#17a2b8">${resource.total_hours}</span>
+                <span style="font-size:16px;font-weight:500;color:#17a2b8">${formatNumber(resource.total_hours, 0)}</span>
             </td>
         </tr>
     `).join('');
 }
 
 // Cambiar tab de reporte
-function switchReportTab(tabName) {
+function switchReportTab(tabName, event) {
     // Ocultar todos los tabs
     document.querySelectorAll('#reportes .tab-content').forEach(content => {
         content.classList.remove('active');
@@ -366,7 +381,16 @@ function switchReportTab(tabName) {
     }
     
     // Activar botón
-    event.target.classList.add('active');
+    if (event && event.target) {
+        event.target.classList.add('active');
+    } else {
+        // Fallback: encontrar el botón por el nombre del tab
+        document.querySelectorAll('#reportes .tab-button').forEach(button => {
+            if (button.getAttribute('onclick') && button.getAttribute('onclick').includes(tabName)) {
+                button.classList.add('active');
+            }
+        });
+    }
     
     // Cargar datos según el tab
     if (tabName === 'resources-by-project') {

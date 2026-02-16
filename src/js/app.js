@@ -1,4 +1,526 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    // Toggle sidebar
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebar = document.getElementById('sidebar');
+    const appShell = document.getElementById('app-shell');
+    
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            // Guardar estado en localStorage
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            localStorage.setItem('sidebarCollapsed', isCollapsed);
+        });
+        
+        // Restaurar estado del sidebar desde localStorage
+        const savedState = localStorage.getItem('sidebarCollapsed');
+        if (savedState === 'true') {
+            sidebar.classList.add('collapsed');
+        }
+    }
+    
+        // Asociar botón de proyectos a la vista de importar OTs (solo una vez, sin duplicados)
+        let otImportBtn = document.getElementById('ot-import-btn');
+        if (otImportBtn && !otImportBtn.dataset.listenerAdded) {
+            otImportBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                window.showView('importar-ots');
+            });
+            otImportBtn.dataset.listenerAdded = 'true';
+        }
+    // --- Importar OTs desde Excel: Navegación y lógica avanzada ---
+    const otImportBtnStandalone = document.querySelector('[data-view="importar-ots"]');
+    if (otImportBtnStandalone) {
+        otImportBtnStandalone.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.showView('importar-ots');
+        });
+    }
+
+    const otTemplateBtn = document.getElementById('ot-template-btn');
+    if (otTemplateBtn) {
+        otTemplateBtn.addEventListener('click', () => {
+            const wb = window.XLSX ? window.XLSX.utils.book_new() : null;
+            const ws_data = [
+                ['Número OT', 'Folio Principal Santec', 'Folio Santec', 'Nombre Proyecto'],
+                ['CPA-AFI-00073677', 'MXP6042', '30/01/2026', 'Fondos y Perfilamiento'],
+                ['CPA-AFI-00073678', 'MXP6042', '30/01/2026', 'Plataforma global de inversiones']
+            ];
+            if (window.XLSX && wb) {
+                const ws = window.XLSX.utils.aoa_to_sheet(ws_data);
+                window.XLSX.utils.book_append_sheet(wb, ws, 'OTs');
+                const wbout = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const blob = new Blob([wbout], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'plantilla_ots.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+            } else {
+                // fallback CSV
+                const csv = ws_data.map(r => r.join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'plantilla_ots.csv';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+            }
+        });
+    }
+
+    const otImportFileStandalone = document.getElementById('ot-import-file-standalone');
+    const otImportPreviewArea = document.getElementById('ot-import-preview-area');
+    const otImportPreviewTable = document.getElementById('ot-import-preview-table');
+    const otImportSaveBtn = document.getElementById('ot-import-save-btn');
+    const otImportCancelBtn = document.getElementById('ot-import-cancel-btn');
+    let otImportPreviewRows = [];
+    let availableProjects = [];
+
+    // Cargar proyectos disponibles
+    async function loadAvailableProjects() {
+        try {
+            const response = await fetch(window.getApiUrl ? window.getApiUrl('/api/projects') : '/api/projects');
+            availableProjects = await response.json();
+        } catch (err) {
+            console.error('Error loading projects:', err);
+            availableProjects = [];
+        }
+    }
+
+    // Encontrar proyecto por nombre
+    function findProjectByName(projectName) {
+        if (!projectName) return null;
+        const normalized = projectName.trim().toLowerCase();
+        return availableProjects.find(p => p.name && p.name.trim().toLowerCase() === normalized);
+    }
+
+    // Convertir número serial de Excel a fecha ISO (YYYY-MM-DD)
+    function excelSerialToDate(serial) {
+        if (!serial || serial === '') return null;
+        
+        // Si ya es una fecha válida en formato string, retornarla
+        if (typeof serial === 'string' && serial.match(/^\d{4}-\d{2}-\d{2}/)) {
+            return serial.split('T')[0]; // Tomar solo la parte de fecha
+        }
+        
+        // Si es un número (serial de Excel)
+        if (typeof serial === 'number') {
+            // Excel guarda las fechas como días desde 1900-01-01
+            // pero tiene un bug: cuenta 1900 como año bisiesto (no lo es)
+            const excelEpoch = new Date(1899, 11, 30); // 30 de diciembre de 1899
+            const days = Math.floor(serial);
+            const date = new Date(excelEpoch.getTime() + days * 24 * 60 * 60 * 1000);
+            
+            // Formatear como YYYY-MM-DD
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            
+            return `${year}-${month}-${day}`;
+        }
+        
+        // Si es string que parece una fecha de Excel (dd/mm/yyyy)
+        if (typeof serial === 'string' && serial.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+            const parts = serial.split('/');
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2];
+            return `${year}-${month}-${day}`;
+        }
+        
+        return null;
+    }
+
+    // Convertir valor numérico si es necesario
+    function parseNumericValue(value) {
+        if (value === null || value === undefined || value === '') return null;
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') {
+            // Limpiar formato de moneda o porcentaje
+            const cleaned = value.replace(/[$,%]/g, '').trim();
+            const num = parseFloat(cleaned);
+            return isNaN(num) ? null : num;
+        }
+        return null;
+    }
+
+    if (otImportFileStandalone) {
+        otImportFileStandalone.addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            // Cargar proyectos disponibles
+            await loadAvailableProjects();
+            
+            // Cargar XLSX si no existe
+            if (!window.XLSX) {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const data = evt.target.result;
+                const workbook = window.XLSX.read(data, { type: 'binary' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                
+                if (rows.length < 2) {
+                    Swal.fire({ icon: 'error', title: 'El archivo está vacío' });
+                    return;
+                }
+                
+                const header = rows[0];
+                
+                // Mapeo de columnas
+                const columnMap = {
+                    ot_code: header.findIndex(h => h && h.toString().toLowerCase().includes('número ot')),
+                    folio_principal_santec: header.findIndex(h => h && h.toString().toLowerCase().includes('folio principal santec')),
+                    folio_santec: header.findIndex(h => h && h.toString().toLowerCase().includes('folio santec')),
+                    nombre_proyecto: header.findIndex(h => h && h.toString().toLowerCase().includes('nombre proyecto')),
+                    status: header.findIndex(h => h && h.toString().toLowerCase() === 'estado'),
+                    description: header.findIndex(h => h && h.toString().toLowerCase().includes('descripción')),
+                    tipo_servicio: header.findIndex(h => h && h.toString().toLowerCase().includes('tipo servicio')),
+                    tecnologia: header.findIndex(h => h && h.toString().toLowerCase().includes('tecnología')),
+                    aplicativo: header.findIndex(h => h && h.toString().toLowerCase().includes('aplicativo')),
+                    fecha_inicio_proveedor: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha inicio proveedor')),
+                    fecha_fin_proveedor: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha fin proveedor')),
+                    lider_delivery: header.findIndex(h => h && h.toString().toLowerCase().includes('líder delivery')),
+                    responsable_proyecto: header.findIndex(h => h && h.toString().toLowerCase().includes('responsable de proyecto')),
+                    cbt_responsable: header.findIndex(h => h && h.toString().toLowerCase().includes('cbt responsable')),
+                    monto_servicio_proveedor: header.findIndex(h => h && h.toString().toLowerCase().includes('monto del servicio (proveedor)') && !h.toString().toLowerCase().includes('iva')),
+                    monto_servicio_proveedor_iva: header.findIndex(h => h && h.toString().toLowerCase().includes('monto del servicio (proveedor) con iva')),
+                    horas: header.findIndex(h => h && h.toString().toLowerCase() === 'horas'),
+                    porcentaje_ejecucion: header.findIndex(h => h && h.toString().toLowerCase().includes('% ejecución')),
+                    // Columnas adicionales
+                    fecha_inicio_santander: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha inicio santander')),
+                    fecha_fin_santander: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha fin santander')),
+                    horas_acordadas: header.findIndex(h => h && h.toString().toLowerCase().includes('hras. acordadas')),
+                    semaforo_esfuerzo: header.findIndex(h => h && h.toString().toLowerCase().includes('semáforo de esfuerzo')),
+                    semaforo_plazo: header.findIndex(h => h && h.toString().toLowerCase().includes('semáforo de plazo')),
+                    autorizacion_rdp: header.findIndex(h => h && h.toString().toLowerCase().includes('autorización rdp')),
+                    proveedor: header.findIndex(h => h && h.toString().toLowerCase().includes('proveedor') && !h.toString().toLowerCase().includes('fecha') && !h.toString().toLowerCase().includes('monto')),
+                    fecha_inicio_real: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha inicio real')),
+                    fecha_fin_real: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha fin real')),
+                    fecha_entrega_proveedor: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha entrega proveedor')),
+                    dias_desvio_entrega: header.findIndex(h => h && h.toString().toLowerCase().includes('días desvío entrega')),
+                    ambiente: header.findIndex(h => h && h.toString().toLowerCase().includes('ambiente')),
+                    fecha_creacion: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha creación')),
+                    fts: header.findIndex(h => h && h.toString().toLowerCase().includes("ft's")),
+                    estimacion_elab_pruebas: header.findIndex(h => h && h.toString().toLowerCase().includes('estimación e-lab + pruebas')),
+                    costo_hora_servicio_proveedor: header.findIndex(h => h && h.toString().toLowerCase().includes('costo por hora del servicio')),
+                    clase_coste: header.findIndex(h => h && h.toString().toLowerCase().includes('clase de coste')),
+                    folio_pds: header.findIndex(h => h && h.toString().toLowerCase().includes('folio pds')),
+                    programa: header.findIndex(h => h && h.toString().toLowerCase().includes('programa')),
+                    front_negocio: header.findIndex(h => h && h.toString().toLowerCase().includes('front de negocio') && !h.toString().toLowerCase().includes('vobo')),
+                    vobo_front_negocio: header.findIndex(h => h && h.toString().toLowerCase().includes('vobo front de negocio') && !h.toString().toLowerCase().includes('fecha')),
+                    fecha_vobo_front_negocio: header.findIndex(h => h && h.toString().toLowerCase().includes('fecha vobo front de negocio'))
+                };
+
+                // Validar columnas obligatorias
+                if (columnMap.ot_code < 0 || columnMap.nombre_proyecto < 0) {
+                    Swal.fire({ 
+                        icon: 'error', 
+                        title: 'Columnas requeridas no encontradas',
+                        text: 'Se requieren al menos: "Número OT" y "Nombre Proyecto"'
+                    });
+                    return;
+                }
+
+                otImportPreviewRows = [];
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row[columnMap.ot_code]) continue;
+                    
+                    const nombreProyecto = row[columnMap.nombre_proyecto] ? row[columnMap.nombre_proyecto].toString().trim() : '';
+                    const project = findProjectByName(nombreProyecto);
+                    
+                    const otData = {
+                        ot_code: row[columnMap.ot_code],
+                        nombre_proyecto: nombreProyecto,
+                        project_id: project ? project.id : null,
+                        hasError: !project,
+                        // Mapear todas las columnas
+                        folio_principal_santec: columnMap.folio_principal_santec >= 0 ? row[columnMap.folio_principal_santec] : null,
+                        folio_santec: columnMap.folio_santec >= 0 ? row[columnMap.folio_santec] : null,
+                        status: columnMap.status >= 0 ? row[columnMap.status] : 'Pendiente',
+                        description: columnMap.description >= 0 ? row[columnMap.description] : null,
+                        tipo_servicio: columnMap.tipo_servicio >= 0 ? row[columnMap.tipo_servicio] : null,
+                        tecnologia: columnMap.tecnologia >= 0 ? row[columnMap.tecnologia] : null,
+                        aplicativo: columnMap.aplicativo >= 0 ? row[columnMap.aplicativo] : null,
+                        // Convertir fechas de Excel
+                        fecha_inicio_santander: columnMap.fecha_inicio_santander >= 0 ? excelSerialToDate(row[columnMap.fecha_inicio_santander]) : null,
+                        fecha_fin_santander: columnMap.fecha_fin_santander >= 0 ? excelSerialToDate(row[columnMap.fecha_fin_santander]) : null,
+                        fecha_inicio_proveedor: columnMap.fecha_inicio_proveedor >= 0 ? excelSerialToDate(row[columnMap.fecha_inicio_proveedor]) : null,
+                        fecha_fin_proveedor: columnMap.fecha_fin_proveedor >= 0 ? excelSerialToDate(row[columnMap.fecha_fin_proveedor]) : null,
+                        // Valores numéricos
+                        horas_acordadas: columnMap.horas_acordadas >= 0 ? parseNumericValue(row[columnMap.horas_acordadas]) : null,
+                        semaforo_esfuerzo: columnMap.semaforo_esfuerzo >= 0 ? row[columnMap.semaforo_esfuerzo] : null,
+                        semaforo_plazo: columnMap.semaforo_plazo >= 0 ? row[columnMap.semaforo_plazo] : null,
+                        lider_delivery: columnMap.lider_delivery >= 0 ? row[columnMap.lider_delivery] : null,
+                        autorizacion_rdp: columnMap.autorizacion_rdp >= 0 ? row[columnMap.autorizacion_rdp] : null,
+                        responsable_proyecto: columnMap.responsable_proyecto >= 0 ? row[columnMap.responsable_proyecto] : null,
+                        cbt_responsable: columnMap.cbt_responsable >= 0 ? row[columnMap.cbt_responsable] : null,
+                        proveedor: columnMap.proveedor >= 0 ? row[columnMap.proveedor] : null,
+                        // Más fechas convertidas
+                        fecha_inicio_real: columnMap.fecha_inicio_real >= 0 ? excelSerialToDate(row[columnMap.fecha_inicio_real]) : null,
+                        fecha_fin_real: columnMap.fecha_fin_real >= 0 ? excelSerialToDate(row[columnMap.fecha_fin_real]) : null,
+                        fecha_entrega_proveedor: columnMap.fecha_entrega_proveedor >= 0 ? excelSerialToDate(row[columnMap.fecha_entrega_proveedor]) : null,
+                        dias_desvio_entrega: columnMap.dias_desvio_entrega >= 0 ? parseNumericValue(row[columnMap.dias_desvio_entrega]) : null,
+                        ambiente: columnMap.ambiente >= 0 ? row[columnMap.ambiente] : null,
+                        fecha_creacion: columnMap.fecha_creacion >= 0 ? excelSerialToDate(row[columnMap.fecha_creacion]) : null,
+                        fts: columnMap.fts >= 0 ? row[columnMap.fts] : null,
+                        estimacion_elab_pruebas: columnMap.estimacion_elab_pruebas >= 0 ? parseNumericValue(row[columnMap.estimacion_elab_pruebas]) : null,
+                        // Valores monetarios
+                        costo_hora_servicio_proveedor: columnMap.costo_hora_servicio_proveedor >= 0 ? parseNumericValue(row[columnMap.costo_hora_servicio_proveedor]) : null,
+                        monto_servicio_proveedor: columnMap.monto_servicio_proveedor >= 0 ? parseNumericValue(row[columnMap.monto_servicio_proveedor]) : null,
+                        monto_servicio_proveedor_iva: columnMap.monto_servicio_proveedor_iva >= 0 ? parseNumericValue(row[columnMap.monto_servicio_proveedor_iva]) : null,
+                        clase_coste: columnMap.clase_coste >= 0 ? row[columnMap.clase_coste] : null,
+                        folio_pds: columnMap.folio_pds >= 0 ? row[columnMap.folio_pds] : null,
+                        programa: columnMap.programa >= 0 ? row[columnMap.programa] : null,
+                        front_negocio: columnMap.front_negocio >= 0 ? row[columnMap.front_negocio] : null,
+                        vobo_front_negocio: columnMap.vobo_front_negocio >= 0 ? row[columnMap.vobo_front_negocio] : null,
+                        fecha_vobo_front_negocio: columnMap.fecha_vobo_front_negocio >= 0 ? excelSerialToDate(row[columnMap.fecha_vobo_front_negocio]) : null,
+                        horas: columnMap.horas >= 0 ? parseNumericValue(row[columnMap.horas]) : null,
+                        porcentaje_ejecucion: columnMap.porcentaje_ejecucion >= 0 ? parseNumericValue(row[columnMap.porcentaje_ejecucion]) : null
+                    };
+                    
+                    otImportPreviewRows.push(otData);
+                }
+                
+                renderOTImportPreview();
+                
+                // Mostrar advertencia si hay proyectos no encontrados
+                const errorCount = otImportPreviewRows.filter(r => r.hasError).length;
+                if (errorCount > 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Proyectos no encontrados',
+                        text: `${errorCount} OT(s) no tienen un proyecto válido. Las filas en rojo requieren seleccionar un proyecto existente.`
+                    });
+                }
+            };
+            reader.readAsBinaryString(file);
+        });
+    }
+
+    function renderOTImportPreview() {
+        if (!otImportPreviewTable) return;
+        const tbody = otImportPreviewTable.querySelector('tbody');
+        tbody.innerHTML = '';
+        
+        if (!otImportPreviewRows.length) {
+            otImportPreviewArea.style.display = 'none';
+            otImportSaveBtn.style.display = 'none';
+            otImportCancelBtn.style.display = 'none';
+            return;
+        }
+        
+        otImportPreviewArea.style.display = '';
+        otImportSaveBtn.style.display = '';
+        otImportCancelBtn.style.display = '';
+        
+        otImportPreviewRows.forEach((row, idx) => {
+            const tr = document.createElement('tr');
+            if (row.hasError) {
+                tr.style.backgroundColor = '#fee';
+            }
+            
+            // Generar opciones de proyectos para el combo
+            let projectOptions = '<option value="">-- Seleccionar proyecto --</option>';
+            availableProjects.forEach(p => {
+                const selected = row.project_id === p.id ? 'selected' : '';
+                projectOptions += `<option value="${p.id}" ${selected}>${p.name}</option>`;
+            });
+            
+            tr.innerHTML = `
+                <td><input type="text" value="${row.ot_code || ''}" readonly style="background:#f5f5f5;"></td>
+                <td><input type="text" value="${row.folio_principal_santec || ''}" onchange="window.updateOTImportCell(${idx},'folio_principal_santec',this.value)"></td>
+                <td><input type="text" value="${row.folio_santec || ''}" onchange="window.updateOTImportCell(${idx},'folio_santec',this.value)"></td>
+                <td>
+                    ${row.hasError ? `<div style="color:#c00;font-size:12px;">⚠️ Proyecto no encontrado</div>` : ''}
+                    <select onchange="window.assignProjectToOT(${idx}, this.value)" style="width:100%;">
+                        ${projectOptions}
+                    </select>
+                    <div style="font-size:11px;color:#666;margin-top:4px;">Original: ${row.nombre_proyecto}</div>
+                </td>
+                <td><button type="button" onclick="window.deleteOTImportRow(${idx})" style="background:#dc3545;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">🗑️ Eliminar</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    window.updateOTImportCell = function(idx, field, value) {
+        if (otImportPreviewRows[idx]) {
+            otImportPreviewRows[idx][field] = value;
+        }
+    };
+
+    window.assignProjectToOT = function(idx, projectId) {
+        if (otImportPreviewRows[idx]) {
+            const project = availableProjects.find(p => p.id == projectId);
+            otImportPreviewRows[idx].project_id = project ? project.id : null;
+            otImportPreviewRows[idx].hasError = !project;
+            renderOTImportPreview();
+        }
+    };
+
+    window.deleteOTImportRow = function(idx) {
+        otImportPreviewRows.splice(idx, 1);
+        renderOTImportPreview();
+    };
+
+    if (otImportCancelBtn) {
+        otImportCancelBtn.addEventListener('click', () => {
+            otImportPreviewRows = [];
+            renderOTImportPreview();
+            if (otImportFileStandalone) otImportFileStandalone.value = '';
+        });
+    }
+
+    if (otImportSaveBtn) {
+        otImportSaveBtn.addEventListener('click', async () => {
+            if (!otImportPreviewRows.length) {
+                Swal.fire({ icon: 'warning', title: 'No hay OTs para guardar' });
+                return;
+            }
+            
+            // Verificar que todas las filas tengan un proyecto asignado
+            const invalidRows = otImportPreviewRows.filter(r => !r.project_id);
+            if (invalidRows.length > 0) {
+                Swal.fire({ 
+                    icon: 'error', 
+                    title: 'Proyectos faltantes',
+                    text: `${invalidRows.length} OT(s) no tienen un proyecto asignado. Por favor, asigna un proyecto o elimina las filas antes de guardar.`
+                });
+                return;
+            }
+            
+            // Guardar OTs usando el endpoint de importación masiva
+            try {
+                const response = await fetch(
+                    window.getApiUrl ? window.getApiUrl('/api/orders-of-work/import') : '/api/orders-of-work/import',
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ orders: otImportPreviewRows })
+                    }
+                );
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    const successCount = result.results.success.length;
+                    const failCount = result.results.failed.length;
+                    
+                    let message = `${successCount} OT(s) guardada(s) exitosamente`;
+                    if (failCount > 0) {
+                        message += `, ${failCount} fallida(s)`;
+                    }
+                    
+                    Swal.fire({ 
+                        icon: successCount > 0 ? 'success' : 'error',
+                        title: 'Importación completada', 
+                        text: message 
+                    });
+                    
+                    if (successCount > 0) {
+                        otImportPreviewRows = [];
+                        renderOTImportPreview();
+                        if (otImportFileStandalone) otImportFileStandalone.value = '';
+                    }
+                } else {
+                    Swal.fire({ 
+                        icon: 'error', 
+                        title: 'Error en la importación',
+                        text: result.error || 'No se pudieron guardar las OTs'
+                    });
+                }
+            } catch (err) {
+                console.error('Error saving orders:', err);
+                Swal.fire({ 
+                    icon: 'error', 
+                    title: 'Error de conexión',
+                    text: 'No se pudo conectar con el servidor'
+                });
+            }
+        });
+    }
+// ...existing code...
+            // --- Importar OTs desde Excel ---
+            // Usar la declaración existente de otImportBtn
+            const otImportFile = document.getElementById('ot-import-file');
+            const otImportStatus = document.getElementById('ot-import-status');
+            if (otImportBtn && otImportFile) {
+                otImportBtn.addEventListener('click', () => otImportFile.click());
+                otImportFile.addEventListener('change', async function(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    otImportStatus.textContent = 'Procesando archivo...';
+                    try {
+                        // Cargar XLSX si no existe
+                        if (!window.XLSX) {
+                            otImportStatus.textContent = 'Cargando librería XLSX...';
+                            await new Promise((resolve, reject) => {
+                                const script = document.createElement('script');
+                                script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+                                script.onload = resolve;
+                                script.onerror = reject;
+                                document.head.appendChild(script);
+                            });
+                        }
+                        const reader = new FileReader();
+                        reader.onload = function(evt) {
+                            const data = evt.target.result;
+                            const workbook = window.XLSX.read(data, { type: 'binary' });
+                            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                            // Buscar encabezados
+                            const header = rows[0];
+                            // Indices de columnas necesarias
+                            const idxNumOT = header.findIndex(h => h && h.toString().toLowerCase().includes('número ot'));
+                            const idxFolioPrincipal = header.findIndex(h => h && h.toString().toLowerCase().includes('folio principal'));
+                            const idxFolioSantec = header.findIndex(h => h && h.toString().toLowerCase().includes('folio santec'));
+                            const idxNombreProyecto = header.findIndex(h => h && h.toString().toLowerCase().includes('nombre proyecto'));
+                            if (idxNumOT < 0 || idxFolioPrincipal < 0 || idxFolioSantec < 0 || idxNombreProyecto < 0) {
+                                otImportStatus.textContent = 'No se encontraron las columnas requeridas.';
+                                return;
+                            }
+                            const ots = [];
+                            for (let i = 1; i < rows.length; i++) {
+                                const row = rows[i];
+                                if (!row[idxNumOT]) continue;
+                                ots.push({
+                                    ot_code: row[idxNumOT],
+                                    folio_principal: row[idxFolioPrincipal],
+                                    folio_santec: row[idxFolioSantec],
+                                    description: row[idxNombreProyecto],
+                                    status: 'Pendiente',
+                                    start_date: '',
+                                    end_date: ''
+                                });
+                            }
+                            // Agregar OTs a la lista temporal
+                            window.currentProjectOTs = window.currentProjectOTs.concat(ots);
+                            renderOTList(window.currentProjectOTs);
+                            otImportStatus.textContent = `Se importaron ${ots.length} OTs.`;
+                        };
+                        reader.readAsBinaryString(file);
+                    } catch (err) {
+                        otImportStatus.textContent = 'Error al procesar archivo.';
+                    }
+                });
+            }
         // --- Vacaciones ---
         const addVacationBtn = document.getElementById('add-vacation-btn');
         const vacationTableBody = document.getElementById('vacation-table-body');
@@ -644,7 +1166,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 fetch(window.getApiUrl ? window.getApiUrl('/api/mastercode/Entidad') : '/api/mastercode/Entidad').then(r => r.json()).catch(() => []),
                 fetch(window.getApiUrl ? window.getApiUrl('/api/mastercode/Puestos%20roles') : '/api/mastercode/Puestos%20roles').then(r => r.json()).catch(() => []),
                 fetch(window.getApiUrl ? window.getApiUrl('/api/mastercode/Areas') : '/api/mastercode/Areas').then(r => r.json()).catch(() => []),
-                fetch(window.getApiUrl ? window.getApiUrl('/api/mastercode/Proyecto') : '/api/mastercode/Proyecto').then(r => r.json()).catch(() => []),
+                fetch(window.getApiUrl ? window.getApiUrl('/api/projects') : '/api/projects').then(r => r.json()).catch(() => []),
                 fetch(window.getApiUrl ? window.getApiUrl('/api/mastercode/Celulas') : '/api/mastercode/Celulas').then(r => r.json()).catch(() => []),
                 fetch(window.getApiUrl ? window.getApiUrl('/api/contract-types') : '/api/contract-types').then(r => r.json()).catch(() => []),
                 fetch(window.getApiUrl ? window.getApiUrl('/api/contract-schemes') : '/api/contract-schemes').then(r => r.json()).catch(() => [])
@@ -746,12 +1268,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     function showView(id){
         views.forEach(v=> v.id === id ? v.style.display = '' : v.style.display = 'none');
         navLinks.forEach(a=> a.dataset.view === id ? a.classList.add('active') : a.classList.remove('active'));
-        
         // Recargar datos cuando se accede a la vista de empleados
         if (id === 'alta') {
             loadAndRender();
         }
+        // Cargar órdenes de trabajo cuando se accede a la vista
+        if (id === 'ordenes-trabajo') {
+            window.loadOrdersOfWork();
+        }
     }
+
+    // Hacer showView global para HTML inline onclick
+    window.showView = showView;
 
     async function openModal(isEdit = false){
         console.log('🔓 Abriendo modal, isEdit:', isEdit);
@@ -1691,8 +2219,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>${proj.end_date ? proj.end_date.split('T')[0] : ''}</td>
                 <td><span style="background:${proj.status === 'Completado' ? '#10b981' : proj.status === 'En Progreso' ? '#3b82f6' : proj.status === 'Planificación' ? '#f59e0b' : '#6b7280'};color:white;padding:4px 8px;border-radius:4px;font-size:12px">${proj.status || ''}</span></td>
                 <td>
-                    <button class="btn-action-edit" data-id="${proj.id}">✏️</button>
-                    <button class="btn-action-delete" data-id="${proj.id}" style="margin-left:4px">🗑️</button>
+                    <button class="btn-action-view" data-id="${proj.id}" title="Ver detalles">👁️</button>
+                    <button class="btn-action-edit" data-id="${proj.id}" style="margin-left:4px" title="Editar">✏️</button>
+                    <button class="btn-action-delete" data-id="${proj.id}" style="margin-left:4px" title="Eliminar">🗑️</button>
                 </td>
             `;
             projectTableBody.appendChild(tr);
@@ -1700,8 +2229,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     projectTableBody?.addEventListener('click', async (e) => {
+        const viewBtn = e.target.closest('.btn-action-view');
         const editBtn = e.target.closest('.btn-action-edit');
         const delBtn = e.target.closest('.btn-action-delete');
+        if (viewBtn) {
+            const id = viewBtn.dataset.id;
+            const proj = allProjects.find(p => String(p.id) === String(id));
+            if (!proj) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Proyecto no encontrado',
+                    text: 'No se encontró el proyecto seleccionado'
+                });
+                return;
+            }
+            openProjectModal(true, proj, true); // viewOnly = true
+        }
         if (editBtn) {
             const id = editBtn.dataset.id;
             const proj = allProjects.find(p => String(p.id) === String(id));
@@ -1713,7 +2256,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 return;
             }
-            openProjectModal(true, proj);
+            openProjectModal(true, proj, false); // viewOnly = false
         }
         if (delBtn) {
             const id = delBtn.dataset.id;
@@ -1769,22 +2312,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     const projectForm = document.getElementById('project-form');
     const projectModalClose = document.getElementById('project-modal-close');
     const projectCancel = document.getElementById('project-cancel');
+    const otSectionToggle = document.getElementById('ot-section-toggle');
 
-    async function openProjectModal(isEdit = false, project = null) {
-        document.getElementById('project-modal-title').textContent = isEdit ? 'Editar Proyecto' : 'Nuevo Proyecto';
+    async function openProjectModal(isEdit = false, project = null, viewOnly = false) {
+        console.log('🔔 Abriendo modal de proyecto:', { isEdit, project, viewOnly });
+        document.getElementById('project-modal-title').textContent = viewOnly ? '👁️ Ver Proyecto' : (isEdit ? 'Editar Proyecto' : 'Nuevo Proyecto');
         
-        // Cargar responsables disponibles
-        await loadProjectManagers();
-
+        // Guardar estado viewOnly en el modal
+        projectModal.dataset.viewOnly = viewOnly ? 'true' : 'false';
+        
+        // Cambiar texto del botón cancelar
+        const cancelBtn = document.getElementById('project-cancel');
+        if (cancelBtn) {
+            cancelBtn.textContent = viewOnly ? 'Cerrar' : 'Cancelar';
+        }
+        
+        // Resetear sección OTs (colapsada por defecto solo para nuevo proyecto)
+        const otContent = document.getElementById('ot-section-content');
+        const otArrow = document.getElementById('ot-section-arrow');
+        if (!isEdit) {
+            if (otContent) otContent.style.display = 'none';
+            if (otArrow) otArrow.style.transform = 'rotate(0deg)';
+        }
+        
+        // OTs temporales para proyecto nuevo
         if (!isEdit) {
             projectForm.reset();
             document.getElementById('project-id').value = '';
+            window.currentProjectOTs = [];
+            console.log('📋 Inicializando OTs vacías para proyecto nuevo');
+            renderOTList([]);
         } else if (project) {
             console.log('📝 Loading project data for edit:', project);
             document.getElementById('project-id').value = project.id || '';
             document.getElementById('project-name').value = project.name || '';
             document.getElementById('project-description').value = project.description || '';
-            
             const formatDate = (dateStr) => {
                 if (!dateStr) return '';
                 if (dateStr instanceof Date) {
@@ -1795,19 +2357,261 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 return '';
             };
-            
             document.getElementById('project-start-date').value = formatDate(project.start_date);
             document.getElementById('project-end-date').value = formatDate(project.end_date);
             document.getElementById('project-status').value = project.status || 'Planificación';
-            document.getElementById('project-manager').value = project.manager_id || '';
+            document.getElementById('project-manager').value = project.project_manager || '';
+            document.getElementById('project-leader').value = project.project_leader || '';
+            document.getElementById('cbt-responsible').value = project.cbt_responsible || '';
+            document.getElementById('user-assigned').value = project.user_assigned || '';
+            // Cargar OTs del backend
+            await loadAndRenderOTs(project.id);
             console.log('✅ Project data loaded');
         }
-
+        
+        // Configurar modo de solo lectura
+        const formFields = projectForm.querySelectorAll('input, textarea, select');
+        const submitBtn = document.getElementById('project-submit');
+        const otFormElements = document.querySelectorAll('#ot-form input, #ot-form select, #ot-add-btn');
+        
+        if (viewOnly) {
+            // Deshabilitar todos los campos del formulario
+            formFields.forEach(field => field.disabled = true);
+            // Ocultar botón de guardar
+            if (submitBtn) submitBtn.style.display = 'none';
+            // Deshabilitar formulario de agregar OTs
+            otFormElements.forEach(el => {
+                if (el.tagName === 'A') {
+                    el.style.pointerEvents = 'none';
+                    el.style.opacity = '0.5';
+                } else {
+                    el.disabled = true;
+                }
+            });
+            // Ocultar botones de eliminar OTs (debe hacerse después de renderizar)
+            setTimeout(() => {
+                const otDeleteButtons = document.querySelectorAll('#ot-list-body .btn-action-delete');
+                otDeleteButtons.forEach(btn => btn.style.display = 'none');
+            }, 100);
+            console.log('🔒 Modo solo lectura activado');
+        } else {
+            // Habilitar todos los campos
+            formFields.forEach(field => field.disabled = false);
+            // Mostrar botón de guardar
+            if (submitBtn) submitBtn.style.display = '';
+            // Habilitar formulario de agregar OTs
+            otFormElements.forEach(el => {
+                if (el.tagName === 'A') {
+                    el.style.pointerEvents = '';
+                    el.style.opacity = '';
+                } else {
+                    el.disabled = false;
+                }
+            });
+            // Mostrar botones de eliminar OTs
+            setTimeout(() => {
+                const otDeleteButtons = document.querySelectorAll('#ot-list-body .btn-action-delete');
+                otDeleteButtons.forEach(btn => btn.style.display = '');
+            }, 100);
+            console.log('✏️ Modo edición activado');
+        }
+        
         projectModal.style.display = 'flex';
     }
 
+    async function loadAndRenderOTs(projectId) {
+        if (!projectId) {
+            renderOTList([]);
+            return;
+        }
+        try {
+            const url = window.getApiUrl ? window.getApiUrl(`/api/projects/${projectId}/orders-of-work`) : `/api/projects/${projectId}/orders-of-work`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Error al cargar OTs');
+            const data = await res.json();
+            window.currentProjectOTs = data;
+            renderOTList(data);
+            
+            // Expandir automáticamente la sección de OTs si hay OTs para mostrar
+            if (data && data.length > 0) {
+                const otContent = document.getElementById('ot-section-content');
+                const otArrow = document.getElementById('ot-section-arrow');
+                if (otContent) otContent.style.display = 'block';
+                if (otArrow) otArrow.style.transform = 'rotate(180deg)';
+                console.log('✨ Sección de OTs expandida automáticamente -', data.length, 'OTs encontradas');
+            }
+        } catch (e) {
+            renderOTList([]);
+        }
+    }
+
+    function renderOTList(ots) {
+        console.log('🎨 Renderizando lista de OTs:', ots);
+        const tbody = document.getElementById('ot-list-body');
+        const empty = document.getElementById('ot-list-empty');
+        
+        if (!tbody) {
+            console.error('❌ No se encontró el elemento ot-list-body');
+            return;
+        }
+        if (!empty) {
+            console.error('❌ No se encontró el elemento ot-list-empty');
+            return;
+        }
+        
+        tbody.innerHTML = '';
+        if (!ots || ots.length === 0) {
+            console.log('📭 No hay OTs, mostrando mensaje vacío');
+            empty.style.display = 'block';
+            return;
+        }
+        console.log('📝 Renderizando', ots.length, 'OTs');
+        empty.style.display = 'none';
+        ots.forEach((ot, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="padding:6px 8px;">${ot.ot_code || ''}</td>
+                <td style="padding:6px 8px;">${ot.description || ''}</td>
+                <td style="padding:6px 8px;">${ot.status || ''}</td>
+                <td style="padding:6px 8px;">${ot.start_date || ''}</td>
+                <td style="padding:6px 8px;">${ot.end_date || ''}</td>
+                <td style="padding:6px 8px;"><button class="btn-action-delete" data-ot-id="${ot.id || ''}" data-ot-idx="${idx}" title="Eliminar OT">🗑️</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+        console.log('✅ OTs renderizadas correctamente');
+    }
+
+    // Prevenir submit del formulario OT usando event delegation
+    document.addEventListener('submit', function(e) {
+        if (e.target && e.target.id === 'ot-form') {
+            console.log('⚠️ Formulario OT intentó hacer submit - prevenido');
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+    });
+
+    // Agregar OT - Usando anchor tag con event delegation
+    document.addEventListener('click', async function(e) {
+        // Verificar si el click fue en el enlace Agregar OT
+        const target = e.target;
+        if (target.id === 'ot-add-btn' || target.closest('#ot-add-btn')) {
+            console.log('🔔 Botón Agregar OT clickeado');
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Buscar los elementos dinámicamente
+            const otCodeEl = document.getElementById('ot-code');
+            const otDescEl = document.getElementById('ot-description');
+            const otStatusEl = document.getElementById('ot-status');
+            const otStartEl = document.getElementById('ot-start-date');
+            const otEndEl = document.getElementById('ot-end-date');
+            
+            console.log('🔍 Elementos encontrados:', {
+                otCode: !!otCodeEl,
+                otDesc: !!otDescEl,
+                otStatus: !!otStatusEl,
+                otStart: !!otStartEl,
+                otEnd: !!otEndEl
+            });
+            
+            if (!otCodeEl) {
+                console.error('❌ No se encontró el campo ot-code');
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se encontró el formulario de OT. Por favor, intenta cerrar y abrir el modal nuevamente.' });
+                return;
+            }
+            
+            const otCode = otCodeEl.value.trim();
+            const otDescription = otDescEl?.value.trim() || '';
+            const otStatus = otStatusEl?.value || 'Pendiente';
+            const otStart = otStartEl?.value || '';
+            const otEnd = otEndEl?.value || '';
+            
+            console.log('📝 Datos de OT:', { otCode, otDescription, otStatus, otStart, otEnd });
+            
+            if (!otCode) {
+                Swal.fire({ icon: 'warning', title: 'Código OT requerido', text: 'Por favor ingresa un código para la OT' });
+                return;
+            }
+            const projectId = document.getElementById('project-id')?.value || '';
+            console.log('🆔 Project ID:', projectId);
+            
+            if (projectId) {
+                // POST a API
+                console.log('💾 Guardando OT en backend...');
+                const res = await fetch((window.getApiUrl ? window.getApiUrl(`/api/projects/${projectId}/orders-of-work`) : `/api/projects/${projectId}/orders-of-work`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ot_code: otCode,
+                        description: otDescription,
+                        status: otStatus,
+                        start_date: otStart,
+                        end_date: otEnd
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    console.log('✅ OT guardada en backend:', data);
+                    if (!window.currentProjectOTs) window.currentProjectOTs = [];
+                    window.currentProjectOTs.push(data);
+                    console.log('📋 Total OTs:', window.currentProjectOTs.length);
+                    renderOTList(window.currentProjectOTs);
+                    const otForm = document.getElementById('ot-form');
+                    if (otForm) otForm.reset();
+                    Swal.fire({ title: 'Agregando OT...', timer: 1000, showConfirmButton: false });
+                } else {
+                    console.error('❌ Error al guardar OT:', res.status);
+                    Swal.fire({ icon: 'error', title: 'Error al guardar OT' });
+                }
+            } else {
+                // Proyecto nuevo: guardar en memoria
+                console.log('💾 Guardando OT en memoria (proyecto nuevo)...');
+                if (!window.currentProjectOTs) window.currentProjectOTs = [];
+                window.currentProjectOTs.push({
+                    ot_code: otCode,
+                    description: otDescription,
+                    status: otStatus,
+                    start_date: otStart,
+                    end_date: otEnd
+                });
+                console.log('✅ OT agregada a memoria:', window.currentProjectOTs);
+                console.log('📋 Total OTs:', window.currentProjectOTs.length);
+                renderOTList(window.currentProjectOTs);
+                document.getElementById('ot-form')?.reset();
+                Swal.fire({ title: 'Agregando OT...', timer: 1000, showConfirmButton: false });
+            }
+        }
+    });
+
+    // Eliminar OT - Usando event delegation
+    document.getElementById('ot-list-body')?.addEventListener('click', async function(e) {
+            if (e.target.matches('button[data-ot-id]')) {
+                const otId = e.target.getAttribute('data-ot-id');
+                const otIdx = e.target.getAttribute('data-ot-idx');
+                const projectId = document.getElementById('project-id').value;
+                if (projectId && otId) {
+                    // Eliminar en backend
+                    await fetch((window.getApiUrl ? window.getApiUrl(`/api/orders-of-work/${otId}`) : `/api/orders-of-work/${otId}`), {
+                        method: 'DELETE'
+                    });
+                    window.currentProjectOTs = window.currentProjectOTs.filter(ot => String(ot.id) !== String(otId));
+                    renderOTList(window.currentProjectOTs);
+                } else {
+                    // Eliminar en memoria
+                    window.currentProjectOTs.splice(otIdx, 1);
+                    renderOTList(window.currentProjectOTs);
+                }
+            }
+        });
+
     async function closeProjectModal(skipConfirmation = false) {
-        if (!skipConfirmation) {
+        console.log('🔒 Cerrando modal de proyecto, skipConfirmation:', skipConfirmation);
+        const isViewOnly = projectModal.dataset.viewOnly === 'true';
+        
+        // Si está en modo viewOnly, no mostrar confirmación
+        if (!skipConfirmation && !isViewOnly) {
             const result = await Swal.fire({
                 title: '¿Cancelar proyecto?',
                 text: 'Los cambios no guardados se perderán',
@@ -1818,27 +2622,58 @@ document.addEventListener('DOMContentLoaded', async () => {
                 confirmButtonColor: '#d33',
                 cancelButtonColor: '#3085d6'
             });
-            if (!result.isConfirmed) return;
+            if (!result.isConfirmed) {
+                console.log('❌ Usuario canceló el cierre del modal');
+                return;
+            }
         }
+        console.log('✅ Cerrando modal...');
         projectModal.style.display = 'none';
         projectForm.reset();
+        
+        // Resetear texto del botón cancelar
+        const cancelBtn = document.getElementById('project-cancel');
+        if (cancelBtn) cancelBtn.textContent = 'Cancelar';
+        
+        // Resetear estado viewOnly
+        projectModal.dataset.viewOnly = 'false';
+        
+        // Resetear sección OTs
+        const otContent = document.getElementById('ot-section-content');
+        const otArrow = document.getElementById('ot-section-arrow');
+        if (otContent) otContent.style.display = 'none';
+        if (otArrow) otArrow.style.transform = 'rotate(0deg)';
     }
 
-    async function loadProjectManagers() {
-        const select = document.getElementById('project-manager');
-        const employees = await (window.fetchEmployees ? window.fetchEmployees() : []);
-        select.innerHTML = '<option value="">Seleccionar responsable...</option>';
-        employees.forEach(emp => {
-            const opt = document.createElement('option');
-            opt.value = emp.id;
-            opt.textContent = `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
-            select.appendChild(opt);
-        });
-    }
+    // Toggle de sección OTs
+    otSectionToggle?.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('🔘 Toggle OT section clicked');
+        const content = document.getElementById('ot-section-content');
+        const arrow = document.getElementById('ot-section-arrow');
+        if (content.style.display === 'none' || content.style.display === '') {
+            console.log('📂 Abriendo sección OT');
+            content.style.display = 'block';
+            arrow.style.transform = 'rotate(180deg)';
+        } else {
+            console.log('📁 Cerrando sección OT');
+            content.style.display = 'none';
+            arrow.style.transform = 'rotate(0deg)';
+        }
+    });
 
     addProjectBtn?.addEventListener('click', () => openProjectModal(false));
-    projectModalClose?.addEventListener('click', async () => await closeProjectModal());
-    projectCancel?.addEventListener('click', async () => await closeProjectModal());
+    projectModalClose?.addEventListener('click', async () => {
+        console.log('❌ Close button clicked');
+        await closeProjectModal();
+    });
+    projectCancel?.addEventListener('click', async (e) => {
+        console.log('🚫 Cancel button clicked', e);
+        e.preventDefault();
+        e.stopPropagation();
+        await closeProjectModal();
+    });
     projectModal?.addEventListener('click', async (e) => {
         if (e.target === projectModal) await closeProjectModal();
     });
@@ -1852,15 +2687,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         const startDate = document.getElementById('project-start-date').value;
         const endDate = document.getElementById('project-end-date').value;
         const status = document.getElementById('project-status').value;
-        const managerId = document.getElementById('project-manager').value;
+        const projectManager = document.getElementById('project-manager').value;
+        const projectLeader = document.getElementById('project-leader').value;
+        const cbtResponsible = document.getElementById('cbt-responsible').value;
+        const userAssigned = document.getElementById('user-assigned').value;
 
-        console.log('📝 Project form data:', { projectId, name, startDate, endDate, status });
-
-        if (!name || !startDate || !endDate) {
+        if (!name || !startDate) {
             Swal.fire({
                 icon: 'warning',
                 title: 'Campos requeridos',
-                text: 'Los campos nombre, fecha inicio y fecha fin son obligatorios'
+                text: 'Los campos nombre y fecha de inicio son obligatorios'
             });
             return;
         }
@@ -1872,26 +2708,33 @@ document.addEventListener('DOMContentLoaded', async () => {
                 start_date: startDate,
                 end_date: endDate,
                 status,
-                manager_id: managerId ? parseInt(managerId) : null
+                project_manager: projectManager || null,
+                project_leader: projectLeader || null,
+                cbt_responsible: cbtResponsible || null,
+                user_assigned: userAssigned || null
             };
 
             const url = projectId 
                 ? (window.getApiUrl ? window.getApiUrl(`/api/projects/${projectId}`) : `/api/projects/${projectId}`)
                 : (window.getApiUrl ? window.getApiUrl('/api/projects') : '/api/projects');
-            
             const method = projectId ? 'PUT' : 'POST';
-            
             const response = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            
             const result = await response.json();
-            console.log('✅ Success response:', result);
-            
+            // Si es proyecto nuevo, guardar OTs en backend
+            if (!projectId && window.currentProjectOTs && window.currentProjectOTs.length > 0) {
+                for (const ot of window.currentProjectOTs) {
+                    await fetch((window.getApiUrl ? window.getApiUrl(`/api/projects/${result.id}/orders-of-work`) : `/api/projects/${result.id}/orders-of-work`), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(ot)
+                    });
+                }
+            }
             if (projectId) {
                 Swal.fire({
                     icon: 'success',
@@ -1909,7 +2752,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     showConfirmButton: false
                 });
             }
-            
             closeProjectModal(true); // true = skip confirmation
             fetchProjects();
         } catch (err) {
@@ -1936,4 +2778,326 @@ document.addEventListener('DOMContentLoaded', async () => {
             e.stopPropagation();
         }
     }, true); // Use capture phase
+
+    // ============================================
+    // ÓRDENES DE TRABAJO (OTs) - Vista y Gestión
+    // ============================================
+    
+    let allOrdersOfWork = [];
+    let filteredOrdersOfWork = [];
+
+    // Cargar todas las OTs
+    window.loadOrdersOfWork = async function() {
+        const loading = document.getElementById('ot-grid-loading');
+        const table = document.getElementById('ot-table');
+        const empty = document.getElementById('ot-grid-empty');
+        const error = document.getElementById('ot-grid-error');
+        const tbody = document.getElementById('ot-table-body');
+        
+        // Mostrar loading
+        if (loading) loading.style.display = 'block';
+        if (table) table.style.display = 'none';
+        if (empty) empty.style.display = 'none';
+        if (error) error.style.display = 'none';
+        
+        try {
+            const response = await fetch(
+                window.getApiUrl ? window.getApiUrl('/api/orders-of-work') : '/api/orders-of-work'
+            );
+            
+            if (!response.ok) throw new Error('Error al cargar órdenes de trabajo');
+            
+            allOrdersOfWork = await response.json();
+            filteredOrdersOfWork = [...allOrdersOfWork];
+            
+            // Cargar proyectos para el filtro
+            await loadProjectsForFilter();
+            
+            // Renderizar
+            renderOrdersOfWork();
+            
+        } catch (err) {
+            console.error('Error loading orders of work:', err);
+            if (loading) loading.style.display = 'none';
+            if (error) {
+                error.style.display = 'block';
+                const errorMsg = document.getElementById('ot-error-message');
+                if (errorMsg) errorMsg.textContent = err.message;
+            }
+        }
+    };
+
+    // Cargar proyectos para el filtro
+    async function loadProjectsForFilter() {
+        try {
+            const response = await fetch(
+                window.getApiUrl ? window.getApiUrl('/api/projects') : '/api/projects'
+            );
+            const projects = await response.json();
+            
+            const select = document.getElementById('filter-ot-project');
+            if (select) {
+                select.innerHTML = '<option value="">📁 Todos los proyectos</option>';
+                projects.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.id;
+                    option.textContent = p.name;
+                    select.appendChild(option);
+                });
+            }
+        } catch (err) {
+            console.error('Error loading projects for filter:', err);
+        }
+    }
+
+    // Renderizar tabla de OTs
+    function renderOrdersOfWork() {
+        const loading = document.getElementById('ot-grid-loading');
+        const table = document.getElementById('ot-table');
+        const empty = document.getElementById('ot-grid-empty');
+        const tbody = document.getElementById('ot-table-body');
+        
+        if (loading) loading.style.display = 'none';
+        
+        if (filteredOrdersOfWork.length === 0) {
+            if (empty) empty.style.display = 'block';
+            if (table) table.style.display = 'none';
+            return;
+        }
+        
+        if (empty) empty.style.display = 'none';
+        if (table) table.style.display = 'table';
+        
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        
+        filteredOrdersOfWork.forEach(ot => {
+            const tr = document.createElement('tr');
+            
+            // Formatear valores
+            const formatCurrency = (val) => val ? `$${parseFloat(val).toLocaleString('es-MX', {minimumFractionDigits: 2})}` : '-';
+            const formatDate = (val) => val ? new Date(val).toLocaleDateString('es-MX') : '-';
+            const formatPercent = (val) => val ? `${val}%` : '-';
+            
+            tr.innerHTML = `
+                <td>${ot.ot_code || '-'}</td>
+                <td>${ot.folio_principal_santec || '-'}</td>
+                <td>${ot.folio_santec || '-'}</td>
+                <td>${ot.project_name || ot.nombre_proyecto || '-'}</td>
+                <td><span class="badge badge-${getStatusClass(ot.status)}">${ot.status || 'Pendiente'}</span></td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ot.description || ''}">${ot.description || '-'}</td>
+                <td>${ot.tipo_servicio || '-'}</td>
+                <td>${ot.tecnologia || '-'}</td>
+                <td>${ot.aplicativo || '-'}</td>
+                <td>${formatDate(ot.fecha_inicio_proveedor)}</td>
+                <td>${formatDate(ot.fecha_fin_proveedor)}</td>
+                <td>${ot.lider_delivery || '-'}</td>
+                <td>${ot.responsable_proyecto || '-'}</td>
+                <td>${ot.cbt_responsable || '-'}</td>
+                <td>${formatCurrency(ot.monto_servicio_proveedor)}</td>
+                <td>${formatCurrency(ot.monto_servicio_proveedor_iva)}</td>
+                <td>${ot.horas || '-'}</td>
+                <td>${formatPercent(ot.porcentaje_ejecucion)}</td>
+                <td>
+                    <button onclick="viewOTDetails(${ot.id})" class="btn-icon" title="Ver detalles">👁️</button>
+                    <button onclick="deleteOT(${ot.id})" class="btn-icon" title="Eliminar">🗑️</button>
+                </td>
+            `;
+            
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Obtener clase de badge según el estado
+    function getStatusClass(status) {
+        const statusMap = {
+            'Pendiente': 'warning',
+            'En Progreso': 'info',
+            'Completada': 'success',
+            'Cancelada': 'danger'
+        };
+        return statusMap[status] || 'secondary';
+    }
+
+    // Ver detalles de una OT
+    window.viewOTDetails = async function(otId) {
+        try {
+            const ot = allOrdersOfWork.find(o => o.id === otId);
+            if (!ot) {
+                Swal.fire({ icon: 'error', title: 'OT no encontrada' });
+                return;
+            }
+            
+            const formatCurrency = (val) => val ? `$${parseFloat(val).toLocaleString('es-MX', {minimumFractionDigits: 2})}` : 'N/A';
+            const formatDate = (val) => val ? new Date(val).toLocaleDateString('es-MX') : 'N/A';
+            
+            const html = `
+                <div style="text-align:left;max-height:500px;overflow-y:auto;">
+                    <h3 style="margin-bottom:16px;color:#007bff;">📋 Información General</h3>
+                    <p><strong>Número OT:</strong> ${ot.ot_code}</p>
+                    <p><strong>Proyecto:</strong> ${ot.project_name || ot.nombre_proyecto || 'N/A'}</p>
+                    <p><strong>Estado:</strong> ${ot.status || 'Pendiente'}</p>
+                    <p><strong>Descripción:</strong> ${ot.description || 'N/A'}</p>
+                    
+                    <h3 style="margin:16px 0;color:#007bff;">🏢 Folios y Clasificación</h3>
+                    <p><strong>Folio Principal Santec:</strong> ${ot.folio_principal_santec || 'N/A'}</p>
+                    <p><strong>Folio Santec:</strong> ${ot.folio_santec || 'N/A'}</p>
+                    <p><strong>Tipo Servicio:</strong> ${ot.tipo_servicio || 'N/A'}</p>
+                    <p><strong>Tecnología:</strong> ${ot.tecnologia || 'N/A'}</p>
+                    <p><strong>Aplicativo:</strong> ${ot.aplicativo || 'N/A'}</p>
+                    
+                    <h3 style="margin:16px 0;color:#007bff;">📅 Fechas</h3>
+                    <p><strong>Inicio Santander:</strong> ${formatDate(ot.fecha_inicio_santander)}</p>
+                    <p><strong>Fin Santander:</strong> ${formatDate(ot.fecha_fin_santander)}</p>
+                    <p><strong>Inicio Proveedor:</strong> ${formatDate(ot.fecha_inicio_proveedor)}</p>
+                    <p><strong>Fin Proveedor:</strong> ${formatDate(ot.fecha_fin_proveedor)}</p>
+                    <p><strong>Inicio Real:</strong> ${formatDate(ot.fecha_inicio_real)}</p>
+                    <p><strong>Fin Real:</strong> ${formatDate(ot.fecha_fin_real)}</p>
+                    
+                    <h3 style="margin:16px 0;color:#007bff;">👥 Responsables</h3>
+                    <p><strong>Líder Delivery:</strong> ${ot.lider_delivery || 'N/A'}</p>
+                    <p><strong>Responsable Proyecto:</strong> ${ot.responsable_proyecto || 'N/A'}</p>
+                    <p><strong>CBT Responsable:</strong> ${ot.cbt_responsable || 'N/A'}</p>
+                    <p><strong>Proveedor:</strong> ${ot.proveedor || 'N/A'}</p>
+                    
+                    <h3 style="margin:16px 0;color:#007bff;">💰 Montos e Indicadores</h3>
+                    <p><strong>Horas Acordadas:</strong> ${ot.horas_acordadas || 'N/A'}</p>
+                    <p><strong>Horas:</strong> ${ot.horas || 'N/A'}</p>
+                    <p><strong>Costo por Hora:</strong> ${formatCurrency(ot.costo_hora_servicio_proveedor)}</p>
+                    <p><strong>Monto Servicio:</strong> ${formatCurrency(ot.monto_servicio_proveedor)}</p>
+                    <p><strong>Monto con IVA:</strong> ${formatCurrency(ot.monto_servicio_proveedor_iva)}</p>
+                    <p><strong>% Ejecución:</strong> ${ot.porcentaje_ejecucion || '0'}%</p>
+                    <p><strong>Semáforo Esfuerzo:</strong> ${ot.semaforo_esfuerzo || 'N/A'}</p>
+                    <p><strong>Semáforo Plazo:</strong> ${ot.semaforo_plazo || 'N/A'}</p>
+                    
+                    <h3 style="margin:16px 0;color:#007bff;">📋 Información Adicional</h3>
+                    <p><strong>Ambiente:</strong> ${ot.ambiente || 'N/A'}</p>
+                    <p><strong>Clase de Coste:</strong> ${ot.clase_coste || 'N/A'}</p>
+                    <p><strong>Programa:</strong> ${ot.programa || 'N/A'}</p>
+                    <p><strong>Front de Negocio:</strong> ${ot.front_negocio || 'N/A'}</p>
+                    <p><strong>FT's:</strong> ${ot.fts || 'N/A'}</p>
+                </div>
+            `;
+            
+            Swal.fire({
+                title: `OT: ${ot.ot_code}`,
+                html: html,
+                width: '700px',
+                confirmButtonText: 'Cerrar'
+            });
+        } catch (err) {
+            console.error('Error viewing OT details:', err);
+            Swal.fire({ icon: 'error', title: 'Error al cargar detalles' });
+        }
+    };
+
+    // Eliminar OT
+    window.deleteOT = async function(otId) {
+        const result = await Swal.fire({
+            title: '¿Eliminar OT?',
+            text: 'Esta acción no se puede deshacer',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, eliminar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#dc3545'
+        });
+        
+        if (!result.isConfirmed) return;
+        
+        try {
+            const response = await fetch(
+                window.getApiUrl ? window.getApiUrl(`/api/orders-of-work/${otId}`) : `/api/orders-of-work/${otId}`,
+                { method: 'DELETE' }
+            );
+            
+            if (!response.ok) throw new Error('Error al eliminar OT');
+            
+            Swal.fire({ 
+                icon: 'success', 
+                title: 'OT eliminada',
+                timer: 2000,
+                showConfirmButton: false
+            });
+            
+            window.loadOrdersOfWork();
+        } catch (err) {
+            console.error('Error deleting OT:', err);
+            Swal.fire({ icon: 'error', title: 'Error al eliminar OT', text: err.message });
+        }
+    };
+
+    // Filtros de OTs
+    const filterOTSearchBtn = document.getElementById('filter-ot-search-btn');
+    const filterOTClearBtn = document.getElementById('filter-ot-clear-btn');
+    
+    if (filterOTSearchBtn) {
+        filterOTSearchBtn.addEventListener('click', applyOTFilters);
+    }
+    
+    if (filterOTClearBtn) {
+        filterOTClearBtn.addEventListener('click', clearOTFilters);
+    }
+
+    function applyOTFilters() {
+        const otCode = document.getElementById('filter-ot-code')?.value.toLowerCase() || '';
+        const projectId = document.getElementById('filter-ot-project')?.value || '';
+        const status = document.getElementById('filter-ot-status')?.value || '';
+        
+        filteredOrdersOfWork = allOrdersOfWork.filter(ot => {
+            const matchesCode = !otCode || (ot.ot_code && ot.ot_code.toLowerCase().includes(otCode));
+            const matchesProject = !projectId || ot.project_id == projectId;
+            const matchesStatus = !status || ot.status === status;
+            
+            return matchesCode && matchesProject && matchesStatus;
+        });
+        
+        renderOrdersOfWork();
+    }
+
+    function clearOTFilters() {
+        const filterOTCode = document.getElementById('filter-ot-code');
+        const filterOTProject = document.getElementById('filter-ot-project');
+        const filterOTStatus = document.getElementById('filter-ot-status');
+        
+        if (filterOTCode) filterOTCode.value = '';
+        if (filterOTProject) filterOTProject.value = '';
+        if (filterOTStatus) filterOTStatus.value = '';
+        
+        filteredOrdersOfWork = [...allOrdersOfWork];
+        renderOrdersOfWork();
+    }
+
+    // Agregar estilos para badges si no existen
+    if (!document.getElementById('ot-badge-styles')) {
+        const style = document.createElement('style');
+        style.id = 'ot-badge-styles';
+        style.textContent = `
+            .badge {
+                display: inline-block;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .badge-success { background: #d4edda; color: #155724; }
+            .badge-warning { background: #fff3cd; color: #856404; }
+            .badge-info { background: #d1ecf1; color: #0c5460; }
+            .badge-danger { background: #f8d7da; color: #721c24; }
+            .badge-secondary { background: #e2e3e5; color: #383d41; }
+            .btn-icon {
+                background: none;
+                border: none;
+                font-size: 18px;
+                cursor: pointer;
+                padding: 4px 8px;
+                transition: transform 0.2s;
+            }
+            .btn-icon:hover {
+                transform: scale(1.2);
+            }
+        `;
+        document.head.appendChild(style);
+    }
 });

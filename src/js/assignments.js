@@ -79,6 +79,7 @@ function renderAssignmentsTable(assignments) {
             <td>${assignment.start_date ? new Date(assignment.start_date).toLocaleDateString('es-MX') : '-'}</td>
             <td>${assignment.end_date ? new Date(assignment.end_date).toLocaleDateString('es-MX') : 'Indefinida'}</td>
             <td>${assignment.hours_allocated || '-'} hrs/sem</td>
+            <td>$${assignment.rate ? parseFloat(assignment.rate).toFixed(2) : '0.00'}</td>
             <td>
                 <span style="padding:4px 8px;border-radius:4px;font-size:12px;font-weight:500;
                     ${assignment.is_active ? 'background:#d4edda;color:#155724' : 'background:#f8d7da;color:#721c24'}">
@@ -120,11 +121,15 @@ async function loadBenchIndicator() {
 
 // Abrir modal de nueva asignación
 function openAssignmentModal() {
+    console.log('📂 Abriendo modal de asignación');
     const modal = document.getElementById('assignment-modal');
     const title = document.getElementById('assignment-modal-title');
     const form = document.getElementById('assignment-form');
     
-    if (!modal || !title || !form) return;
+    if (!modal || !title || !form) {
+        console.error('❌ No se encontraron elementos del modal:', { modal: !!modal, title: !!title, form: !!form });
+        return;
+    }
     
     title.textContent = 'Nueva Asignación';
     form.reset();
@@ -137,7 +142,56 @@ function openAssignmentModal() {
     loadProjectsDropdown();
     loadAvailableEmployees();
     
-    modal.style.display = 'block';
+    modal.style.display = 'flex';
+    console.log('✅ Modal abierto');
+    
+    // Configurar event listeners directamente en los botones
+    setupModalEventListeners();
+}
+
+// Función para configurar event listeners del modal
+function setupModalEventListeners() {
+    console.log('🔧 Configurando event listeners del modal...');
+    
+    const cancelBtn = document.getElementById('assignment-cancel');
+    const closeBtn = document.getElementById('assignment-modal-close');
+    
+    console.log('  - Botón Cancelar:', cancelBtn ? 'ENCONTRADO ✅' : 'NO ENCONTRADO ❌');
+    console.log('  - Botón Cerrar (X):', closeBtn ? 'ENCONTRADO ✅' : 'NO ENCONTRADO ❌');
+    
+    if (cancelBtn) {
+        // Remover event listener anterior si existe
+        cancelBtn.onclick = null;
+        
+        // Agregar nuevo event listener
+        cancelBtn.onclick = async function(e) {
+            console.log('🖱️ ¡CLICK EN CANCELAR! (onclick)');
+            e.preventDefault();
+            e.stopPropagation();
+            await handleCancelClick();
+        };
+        
+        console.log('✅ onclick configurado en botón Cancelar');
+    }
+    
+    if (closeBtn) {
+        closeBtn.onclick = null;
+        
+        closeBtn.onclick = async function(e) {
+            console.log('🖱️ ¡CLICK EN CERRAR (X)! (onclick)');
+            e.preventDefault();
+            await handleCancelClick();
+        };
+        
+        console.log('✅ onclick configurado en botón Cerrar (X)');
+    }
+}
+
+// Función handler para manejar el click en cancelar/cerrar
+async function handleCancelClick() {
+    console.log('🔴 handleCancelClick ejecutándose...');
+    await closeAssignmentModal();
+    console.log('🔵 handleCancelClick completado');
 }
 
 // Cargar proyectos en dropdown
@@ -192,6 +246,7 @@ async function saveAssignment(event) {
     const startDate = document.getElementById('assignment-start-date')?.value;
     const endDate = document.getElementById('assignment-end-date')?.value;
     const hours = document.getElementById('assignment-hours')?.value;
+    const rate = document.getElementById('assignment-rate')?.value;
     
     if (!projectId || !employeeId || !startDate) {
         Swal.fire({
@@ -207,7 +262,8 @@ async function saveAssignment(event) {
         role: role || null,
         start_date: startDate,
         end_date: endDate || null,
-        hours_allocated: hours ? parseFloat(hours) : null
+        hours_allocated: hours ? parseFloat(hours) : null,
+        rate: rate ? parseFloat(rate) : 0
     };
     
     try {
@@ -311,6 +367,8 @@ async function finishAssignment(assignmentId) {
 
 // Cerrar modal de asignaciones
 async function closeAssignmentModal(skipConfirmation = false) {
+    console.log('🔒 Cerrando modal de asignación, skipConfirmation:', skipConfirmation);
+    
     if (!skipConfirmation) {
         const result = await Swal.fire({
             title: '¿Cancelar asignación?',
@@ -322,14 +380,41 @@ async function closeAssignmentModal(skipConfirmation = false) {
             confirmButtonColor: '#d33',
             cancelButtonColor: '#3085d6'
         });
-        if (!result.isConfirmed) return;
+        
+        console.log('SweetAlert result:', result);
+        if (!result.isConfirmed) {
+            console.log('❌ Usuario canceló el cierre');
+            return;
+        }
+        console.log('✅ Usuario confirmó el cierre');
     }
+    
+    // Cerrar modal y limpiar formulario
     const modal = document.getElementById('assignment-modal');
-    if (modal) {
-        modal.style.display = 'none';
-        const form = document.getElementById('assignment-form');
-        if (form) form.reset();
+    if (!modal) {
+        console.error('❌ No se encontró el modal assignment-modal');
+        return;
     }
+    
+    console.log('🚪 Cerrando modal...');
+    modal.style.display = 'none';
+    
+    const form = document.getElementById('assignment-form');
+    if (form) {
+        form.reset();
+        const idField = document.getElementById('assignment-id');
+        if (idField) idField.value = '';
+        console.log('🧹 Formulario limpiado');
+    }
+    
+    // Ocultar alerta de conflicto
+    const alert = document.getElementById('assignment-conflict-alert');
+    if (alert) {
+        alert.style.display = 'none';
+        console.log('🔕 Alerta de conflicto ocultada');
+    }
+    
+    console.log('✅ Modal cerrado exitosamente');
 }
 
 // Ver detalles de recursos en banca
@@ -341,7 +426,7 @@ async function openBenchModal() {
     
     if (!modal) return;
     
-    modal.style.display = 'block';
+    modal.style.display = 'flex';
     
     if (loadingEl) loadingEl.style.display = 'block';
     if (tableEl) tableEl.style.display = 'none';
@@ -447,23 +532,52 @@ async function loadAssignmentFilters() {
 
 // Event listeners
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 Inicializando event listeners de Asignaciones');
+    
+    // Verificar que SweetAlert esté disponible
+    if (typeof Swal === 'undefined') {
+        console.error('❌ SweetAlert2 no está cargado!');
+    } else {
+        console.log('✅ SweetAlert2 disponible');
+    }
+    
     // Botón agregar asignación
     const addBtn = document.getElementById('add-assignment-btn');
     if (addBtn) {
+        console.log('✅ Botón agregar asignación encontrado');
         addBtn.addEventListener('click', openAssignmentModal);
+    } else {
+        console.warn('⚠️ No se encontró el botón add-assignment-btn');
     }
     
-    // Botón cerrar modal
-    const closeBtn = document.getElementById('assignment-modal-close');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', async () => await closeAssignmentModal());
-    }
+    // Event delegation como fallback
+    document.addEventListener('click', async (e) => {
+        const target = e.target;
+        
+        // Solo log para elementos relacionados con el modal de asignaciones
+        if (target && (target.id === 'assignment-cancel' || target.id === 'assignment-modal-close')) {
+            console.log('👁️ Click detectado en:', target.id);
+        }
+        
+        // Detectar click en botón cancelar
+        if (target && target.id === 'assignment-cancel') {
+            console.log('🎯 DELEGACIÓN: Click en Cancelar detectado');
+            e.preventDefault();
+            e.stopPropagation();
+            await handleCancelClick();
+            return;
+        }
+        
+        // Detectar click en botón cerrar (X)
+        if (target && target.id === 'assignment-modal-close') {
+            console.log('🎯 DELEGACIÓN: Click en Cerrar (X) detectado');
+            e.preventDefault();
+            await handleCancelClick();
+            return;
+        }
+    });
     
-    // Botón cancelar
-    const cancelBtn = document.getElementById('assignment-cancel');
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', async () => await closeAssignmentModal());
-    }
+    console.log('✅ Event delegation configurado');
     
     // Formulario
     const form = document.getElementById('assignment-form');
@@ -517,6 +631,8 @@ document.addEventListener('DOMContentLoaded', () => {
 window.loadAssignments = loadAssignments;
 window.openAssignmentModal = openAssignmentModal;
 window.closeAssignmentModal = closeAssignmentModal;
+window.handleCancelClick = handleCancelClick;
+window.setupModalEventListeners = setupModalEventListeners;
 window.assignEmployee = assignEmployee;
 window.finishAssignment = finishAssignment;
 window.openBenchModal = openBenchModal;
