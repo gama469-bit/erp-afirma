@@ -19,13 +19,17 @@ html,body{height:100%;margin:0;font-family:'Segoe UI', Tahoma, Geneva, Verdana, 
 .topbar{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-bottom:1px solid var(--border)}
 .topbar-inner{max-width:1400px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:12px 24px}
 .topbar-left{display:flex;align-items:center;gap:16px}
+.hamburger-btn{background:none;border:none;font-size:24px;color:var(--brand-primary);cursor:pointer;padding:8px;border-radius:8px;transition:background 0.2s;display:flex;align-items:center;justify-content:center}
+.hamburger-btn:hover{background:var(--brand-light);transform:none}
+.hamburger-icon{display:inline-block;line-height:1}
 .topbar-logo{width:40px;height:40px;border-radius:8px;background:var(--brand-primary);display:flex;align-items:center;justify-content:center}
 .topbar-title{font-weight:700;color:var(--brand-primary);font-size:16px;letter-spacing:-0.5px}
 .topbar-right{display:flex;align-items:center;gap:12px}
 .user-pill{background:var(--brand-light);padding:8px 12px;border-radius:20px;color:var(--brand-primary);font-weight:600;font-size:13px}
 
-.app-shell{display:flex;height:calc(100vh - 48px);max-width:1400px;margin:24px auto;background:transparent;gap:24px;padding:0 24px;overflow:hidden}
-.sidebar{width:var(--sidebar-width);background:linear-gradient(180deg,var(--brand-primary) 0%, #002d5f 100%);color:#fff;padding:28px 20px;border-radius:12px;display:flex;flex-direction:column;box-shadow:0 4px 12px rgba(0,61,130,0.15);height:fit-content;position:sticky;top:24px}
+.app-shell{display:flex;height:calc(100vh - 48px);max-width:1400px;margin:24px auto;background:transparent;gap:24px;padding:0 24px;overflow:hidden;transition:all 0.3s ease}
+.sidebar{width:var(--sidebar-width);min-width:var(--sidebar-width);background:linear-gradient(180deg,var(--brand-primary) 0%, #002d5f 100%);color:#fff;padding:28px 20px;border-radius:12px;display:flex;flex-direction:column;box-shadow:0 4px 12px rgba(0,61,130,0.15);height:fit-content;position:sticky;top:24px;transition:all 0.3s ease;overflow:hidden}
+.sidebar.collapsed{width:0;min-width:0;padding:0;opacity:0;margin-left:-24px}
 .brand{display:flex;align-items:center;gap:12px;margin-bottom:24px}
 .brand-image{width:56px;height:56px;border-radius:8px;background:#fff;display:block;object-fit:contain;padding:6px}
 .brand-title{font-size:16px;font-weight:700;letter-spacing:-0.5px}
@@ -33,8 +37,9 @@ html,body{height:100%;margin:0;font-family:'Segoe UI', Tahoma, Geneva, Verdana, 
 .nav{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .nav a{color:rgba(255,255,255,0.8);text-decoration:none;padding:10px 12px;border-radius:8px;display:block;font-weight:500;font-size:14px;transition:all 0.2s}
 .nav a.active,.nav a:hover{background:rgba(255,255,255,0.15);color:#fff}
-.content{flex:1;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;max-height:100%}
-.card{background:#fff;padding:24px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid var(--border)}
+.content{flex:1;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;max-height:100%;width:100%}
+.card{background:#fff;padding:24px;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid var(--border);width:100%}
+.view{width:100% !important;max-width:100% !important;margin:0 !important}
 .card h2{color:var(--brand-primary);margin-top:0;margin-bottom:12px;font-size:22px;letter-spacing:-0.5px}
 
 .form-section{padding:12px;border-radius:8px;background:#fbfdff;border:1px solid rgba(0,102,255,0.06);margin-bottom:12px}
@@ -63,7 +68,7 @@ button:active{transform:translateY(0)}
 .modal-header{display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid var(--border)}
 .modal-header h3{margin:0;font-size:18px;color:var(--brand-primary);letter-spacing:-0.5px}
 .modal-close{background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;padding:0;transition:color 0.2s}
-.modal-close:hover{color:var(--brand-primary)}
+.modal-close:hover{color:var(--brand-primary);transform:none}
 .modal form{padding:24px}
 
 /* Make modal content scrollable when form is tall */
@@ -82,8 +87,9 @@ button:active{transform:translateY(0)}
 .status-hired{background:#cffafe;color:#164e63}
 
 @media(max-width:900px){
-  .sidebar{display:none;position:static;height:auto}
-  .app-shell{flex-direction:column;max-width:100%;padding:0 16px;gap:0}
+  .sidebar.collapsed{display:none}
+  .app-shell{flex-direction:column;max-width:100%;padding:0 16px;gap:12px}
+  .sidebar{width:100%;min-width:100%;position:static;margin-bottom:16px}
   .content{padding:0}
 }
 
@@ -162,6 +168,7 @@ button:active{transform:translateY(0)}
   border:1px solid var(--border);
   border-radius:8px;
   background:#fff;
+  width:100%;
 }
 
 .employee-table{
@@ -238,6 +245,25 @@ button:active{transform:translateY(0)}
 }
 
 /* Botones de acción en el grid */
+.btn-action-view {
+  background: #6366f1 !important;
+  color: white !important;
+  border: none !important;
+  padding: 6px 10px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  white-space: nowrap !important;
+}
+
+.btn-action-view:hover {
+  background: #4f46e5 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2) !important;
+}
+
 .btn-action-edit {
   background: var(--brand-accent) !important;
   color: white !important;
@@ -281,7 +307,8 @@ button:active{transform:translateY(0)}
   background: white;
   border-radius: 8px;
   border: 1px solid var(--border);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .employee-grid-wrapper {
@@ -306,6 +333,40 @@ button:active{transform:translateY(0)}
 /* Mejorar tabla responsive */
 .employee-table {
   min-width: 1200px;
+}
+
+/* Scroll horizontal con estilo */
+.employee-grid-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.employee-grid-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.employee-grid-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.employee-grid-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Tabla de proyectos específicamente */
+#project-table {
+  min-width: 900px;
+}
+
+@media(max-width: 768px) {
+  .employee-table {
+    min-width: 800px;
+  }
+  
+  #project-table {
+    min-width: 700px;
+  }
 }
 
 /* ===== ESTILOS PARA INVENTARIO DE EQUIPOS ===== */

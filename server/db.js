@@ -9,7 +9,7 @@ let dbConfig = {
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'BD_afirma',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'Sistemas1',
+  password: process.env.DB_PASSWORD || 'password',
   ssl: false,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
