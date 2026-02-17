@@ -69,10 +69,21 @@ jspm_packages/
 .DS_Store
 Thumbs.db
 
-# Database
-*.sql
+# Database - Exclude database dumps and temporary SQL files
+# BUT keep migrations and schema files tracked
 *.db
 *.sqlite
+*_dump.sql
+*_backup.sql
+dump-*.sql
+backup-*.sql
+test-*.sql
+temp-*.sql
+
+# Keep these SQL files tracked (not ignored):
+# - server/migrations/*.sql (database migrations)
+# - create_tables.sql (schema definitions)
+# - BD_afirmav1.sql (initial schema)
 
 # Temporary files
 temp/
