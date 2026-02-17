@@ -104,6 +104,9 @@
     <header class="topbar">
         <div class="topbar-inner">
             <div class="topbar-left">
+                <button id="sidebar-toggle" class="hamburger-btn" title="Toggle menu">
+                    <span class="hamburger-icon">☰</span>
+                </button>
                 <img src="assets/logo.png" alt="logo" class="topbar-logo">
                 <div class="topbar-title">ERP AFIRMA</div>
             </div>
@@ -113,8 +116,8 @@
         </div>
     </header>
 
-    <div class="app-shell">
-        <aside class="sidebar">
+    <div class="app-shell" id="app-shell">
+        <aside class="sidebar" id="sidebar">
             <div class="brand">
                 <img src="assets/logo.png" alt="Afirma logo" class="brand-image">
                 <div>
@@ -676,48 +679,68 @@
 
                         <div style="margin-bottom:20px;">
                             <label style="display:block;margin-bottom:8px;font-weight:500;">Responsable del Proyecto</label>
-                            <select id="project-manager" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
-                                <option value="">Seleccionar responsable...</option>
-                            </select>
+                            <input type="text" id="project-manager" placeholder="Nombre del responsable del proyecto" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
                         </div>
 
-                        <!-- Órdenes de Trabajo (OTs) -->
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+                            <div>
+                                <label style="display:block;margin-bottom:8px;font-weight:500;">Líder de Proyecto</label>
+                                <input type="text" id="project-leader" placeholder="Nombre del líder de proyecto" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                            </div>
+                            <div>
+                                <label style="display:block;margin-bottom:8px;font-weight:500;">CBT Responsable</label>
+                                <input type="text" id="cbt-responsible" placeholder="CBT responsable del proyecto" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:500;">Usuario</label>
+                            <input type="text" id="user-assigned" placeholder="Usuario asignado al proyecto" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                        </div>
+
+                        <!-- Órdenes de Trabajo (OTs) - Sección Colapsable -->
                         <div style="margin-bottom:28px;">
-                            <label style="display:block;margin-bottom:8px;font-weight:600;font-size:1.1em;">Órdenes de Trabajo (OTs)</label>
-                            <form id="ot-form" style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
-                                <input type="text" id="ot-code" placeholder="Código OT *" required style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
-                                <input type="text" id="ot-description" placeholder="Descripción" style="flex:2;min-width:180px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
-                                <select id="ot-status" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
-                                    <option value="Pendiente">Pendiente</option>
-                                    <option value="En Progreso">En Progreso</option>
-                                    <option value="Completada">Completada</option>
-                                </select>
-                                <input type="date" id="ot-start-date" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
-                                <input type="date" id="ot-end-date" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
-                                <button type="button" id="ot-add-btn" class="btn-primary" style="padding:8px 16px;font-size:14px">+ Agregar OT</button>
-                            </form>
-                            <div id="ot-list-container" style="background:#f8fafc;border-radius:8px;padding:10px 0;max-height:180px;overflow-y:auto;border:1px solid #e6eef8;">
-                                <table style="width:100%;font-size:14px;">
-                                    <thead>
-                                        <tr style="background:#f1f5f9">
-                                            <th style="padding:6px 8px;">Código</th>
-                                            <th style="padding:6px 8px;">Descripción</th>
-                                            <th style="padding:6px 8px;">Estado</th>
-                                            <th style="padding:6px 8px;">Inicio</th>
-                                            <th style="padding:6px 8px;">Fin</th>
-                                            <th style="padding:6px 8px;">Acción</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="ot-list-body">
-                                        <!-- OTs se llenan dinámicamente -->
-                                    </tbody>
-                                </table>
-                                <div id="ot-list-empty" style="text-align:center;color:#999;padding:12px;display:none">No hay OTs registradas</div>
+                            <button type="button" id="ot-section-toggle" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f8fafc;border:1px solid #e6eef8;border-radius:8px;cursor:pointer;font-weight:600;font-size:1.05em;color:#374151;transition:all 0.3s;text-align:left;">
+                                <span>📋 Órdenes de Trabajo (OTs) - Opcional</span>
+                                <span id="ot-section-arrow" style="transition:transform 0.3s;">▼</span>
+                            </button>
+                            
+                            <div id="ot-section-content" style="display:none;margin-top:12px;padding:16px;background:#fafbfc;border:1px solid #e6eef8;border-radius:8px;">
+                                <form id="ot-form" style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
+                                    <input type="text" id="ot-code" placeholder="Código OT" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                    <input type="text" id="ot-description" placeholder="Descripción" style="flex:2;min-width:180px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                    <select id="ot-status" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                        <option value="Pendiente">Pendiente</option>
+                                        <option value="En Progreso">En Progreso</option>
+                                        <option value="Completada">Completada</option>
+                                    </select>
+                                    <input type="date" id="ot-start-date" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                    <input type="date" id="ot-end-date" style="flex:1;min-width:120px;padding:8px;border:1px solid #e6eef8;border-radius:6px;">
+                                    <a href="#" id="ot-add-btn" class="btn-primary" style="padding:8px 16px;font-size:14px;text-decoration:none;display:inline-block;cursor:pointer;">✚ Agregar OT</a>
+                                </form>
+                                <div id="ot-list-container" style="background:#ffffff;border-radius:8px;padding:10px 0;max-height:180px;overflow-y:auto;border:1px solid #e6eef8;">
+                                    <table style="width:100%;font-size:14px;">
+                                        <thead>
+                                            <tr style="background:#f1f5f9">
+                                                <th style="padding:6px 8px;">Código</th>
+                                                <th style="padding:6px 8px;">Descripción</th>
+                                                <th style="padding:6px 8px;">Estado</th>
+                                                <th style="padding:6px 8px;">Inicio</th>
+                                                <th style="padding:6px 8px;">Fin</th>
+                                                <th style="padding:6px 8px;">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ot-list-body">
+                                            <!-- OTs se llenan dinámicamente -->
+                                        </tbody>
+                                    </table>
+                                    <div id="ot-list-empty" style="text-align:center;color:#999;padding:12px;display:none">No hay OTs registradas</div>
+                                </div>
                             </div>
                         </div>
 
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                            <button type="button" id="project-cancel" class="btn-secondary">Cancelar</button>
+                            <a href="#" id="project-cancel" class="btn-secondary" style="text-decoration:none;display:inline-block;text-align:center;cursor:pointer;">Cancelar</a>
                             <button type="submit" id="project-submit" class="btn-primary">Guardar Proyecto</button>
                         </div>
                         </div>
@@ -817,7 +840,8 @@
                                 <th>📅 Fecha Inicio</th>
                                 <th>📅 Fecha Fin</th>
                                 <th>⏰ Horas Asignadas</th>
-                                <th>📊 Estado</th>
+                                <th>� Tarifa</th>
+                                <th>�📊 Estado</th>
                                 <th>⚙️ Acciones</th>
                             </tr>
                         </thead>
@@ -885,8 +909,14 @@
                             <small style="display:block;margin-top:4px;color:#6b7280">Horas semanales dedicadas al proyecto</small>
                         </div>
 
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:500;">💰 Tarifa</label>
+                            <input type="number" id="assignment-rate" min="0" step="0.01" placeholder="Ej: 1500.00" style="width:100%;padding:12px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff">
+                            <small style="display:block;margin-top:4px;color:#6b7280">Tarifa del recurso en este proyecto (opcional)</small>
+                        </div>
+
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                            <button type="button" id="assignment-cancel" class="btn-secondary">Cancelar</button>
+                            <a href="#" id="assignment-cancel" class="btn-secondary" style="text-decoration:none;display:inline-block;text-align:center;cursor:pointer;">Cancelar</a>
                             <button type="submit" id="assignment-submit" class="btn-primary">Guardar Asignación</button>
                         </div>
                     </form>

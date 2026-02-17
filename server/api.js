@@ -2061,6 +2061,7 @@ app.get('/api/projects', async (req, res) => {
     const result = await db.query(
       `SELECT p.id, p.name, p.area_id, p.description, p.created_at, 
               p.start_date, p.end_date, p.status, p.manager_id,
+              p.project_manager, p.project_leader, p.cbt_responsible, p.user_assigned,
               mc.item as area_name
        FROM projects p
        LEFT JOIN mastercode mc ON p.area_id = mc.id AND mc.lista = 'Areas'
@@ -2077,7 +2078,7 @@ app.get('/api/projects', async (req, res) => {
 app.get('/api/projects/assignments', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated,
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated, pa.rate,
               e.first_name, e.last_name, e.email, e.employee_code,
               p.name as project_name,
               mc_position.item as position,
@@ -2112,7 +2113,7 @@ app.get('/api/projects/:id/assignments', async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(
-      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated,
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated, pa.rate,
               e.first_name, e.last_name, e.email, e.employee_code,
               mc_position.item as position,
               mc_area.item as area,
@@ -2425,6 +2426,7 @@ app.get('/api/projects/:id', async (req, res) => {
     const result = await db.query(
       `SELECT p.id, p.name, p.area_id, p.description, p.created_at,
               p.start_date, p.end_date, p.status, p.manager_id,
+              p.project_manager, p.project_leader, p.cbt_responsible, p.user_assigned,
               mc.item as area_name
        FROM projects p
        LEFT JOIN mastercode mc ON p.area_id = mc.id AND mc.lista = 'Areas'
@@ -2443,7 +2445,10 @@ app.get('/api/projects/:id', async (req, res) => {
 
 // Create project
 app.post('/api/projects', async (req, res) => {
-  const { name, description, area_id, start_date, end_date, status, manager_id } = req.body;
+  const { 
+    name, description, area_id, start_date, end_date, status, manager_id,
+    project_manager, project_leader, cbt_responsible, user_assigned 
+  } = req.body;
   
   if (!name) {
     return res.status(400).json({ error: 'Required field: name' });
@@ -2455,9 +2460,13 @@ app.post('/api/projects', async (req, res) => {
   
   try {
     const result = await db.query(
-      `INSERT INTO projects (name, area_id, description, start_date, end_date, status, manager_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, name, area_id, description, start_date, end_date, status, manager_id, created_at`,
+      `INSERT INTO projects (
+        name, area_id, description, start_date, end_date, status, manager_id,
+        project_manager, project_leader, cbt_responsible, user_assigned
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, name, area_id, description, start_date, end_date, status, manager_id,
+                 project_manager, project_leader, cbt_responsible, user_assigned, created_at`,
       [
         name, 
         area_id || null, 
@@ -2465,7 +2474,11 @@ app.post('/api/projects', async (req, res) => {
         start_date,
         end_date || null,
         status || 'Planificación',
-        manager_id || null
+        manager_id || null,
+        project_manager || null,
+        project_leader || null,
+        cbt_responsible || null,
+        user_assigned || null
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -2478,7 +2491,10 @@ app.post('/api/projects', async (req, res) => {
 // Update project
 app.put('/api/projects/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, description, area_id, start_date, end_date, status, manager_id } = req.body;
+  const { 
+    name, description, area_id, start_date, end_date, status, manager_id,
+    project_manager, project_leader, cbt_responsible, user_assigned
+  } = req.body;
   
   try {
     const result = await db.query(
@@ -2489,9 +2505,14 @@ app.put('/api/projects/:id', async (req, res) => {
            start_date = COALESCE($4, start_date),
            end_date = $5,
            status = COALESCE($6, status),
-           manager_id = $7
-       WHERE id = $8
-       RETURNING id, name, area_id, description, start_date, end_date, status, manager_id, created_at`,
+           manager_id = $7,
+           project_manager = $8,
+           project_leader = $9,
+           cbt_responsible = $10,
+           user_assigned = $11
+       WHERE id = $12
+       RETURNING id, name, area_id, description, start_date, end_date, status, manager_id,
+                 project_manager, project_leader, cbt_responsible, user_assigned, created_at`,
       [
         name || null, 
         area_id || null, 
@@ -2500,6 +2521,10 @@ app.put('/api/projects/:id', async (req, res) => {
         end_date || null,
         status || null,
         manager_id || null,
+        project_manager || null,
+        project_leader || null,
+        cbt_responsible || null,
+        user_assigned || null,
         id
       ]
     );
@@ -2535,7 +2560,7 @@ app.delete('/api/projects/:id', async (req, res) => {
 // Add employee to project
 app.post('/api/projects/:id/assignments', async (req, res) => {
   const { id } = req.params;
-  const { employee_id, role, start_date, end_date, hours_allocated } = req.body;
+  const { employee_id, role, start_date, end_date, hours_allocated, rate } = req.body;
   
   if (!employee_id) {
     return res.status(400).json({ error: 'Required field: employee_id' });
@@ -2569,10 +2594,10 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
     
     // Si no hay conflictos, proceder con la asignación
     const result = await db.query(
-      `INSERT INTO project_assignments (project_id, employee_id, role, start_date, end_date, hours_allocated)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, project_id, employee_id, role, start_date, end_date, hours_allocated, created_at`,
-      [id, employee_id, role || null, start_date || null, end_date || null, hours_allocated || null]
+      `INSERT INTO project_assignments (project_id, employee_id, role, start_date, end_date, hours_allocated, rate)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, project_id, employee_id, role, start_date, end_date, hours_allocated, rate, created_at`,
+      [id, employee_id, role || null, start_date || null, end_date || null, hours_allocated || null, rate || 0]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -2584,7 +2609,7 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
 // Update project assignment
 app.put('/api/projects/assignments/:assignmentId', async (req, res) => {
   const { assignmentId } = req.params;
-  const { role, start_date, end_date, hours_allocated } = req.body;
+  const { role, start_date, end_date, hours_allocated, rate } = req.body;
   
   try {
     const result = await db.query(
@@ -2592,10 +2617,11 @@ app.put('/api/projects/assignments/:assignmentId', async (req, res) => {
        SET role = COALESCE($1, role),
            start_date = COALESCE($2, start_date),
            end_date = COALESCE($3, end_date),
-           hours_allocated = COALESCE($4, hours_allocated)
-       WHERE id = $5
+           hours_allocated = COALESCE($4, hours_allocated),
+           rate = COALESCE($5, rate)
+       WHERE id = $6
        RETURNING *`,
-      [role, start_date, end_date, hours_allocated, assignmentId]
+      [role, start_date, end_date, hours_allocated, rate, assignmentId]
     );
     
     if (result.rowCount === 0) {
