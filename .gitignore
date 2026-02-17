@@ -9,6 +9,23 @@ yarn-error.log*
 .env.local
 .env.development
 .env.production
+.env.test
+
+# Archivos con credenciales
+CREDENCIALES.md
+*.credentials
+*.secret
+*-credentials.*
+
+# Scripts temporales con datos sensibles
+check-*.js
+create-*.js
+change-*.js
+grant-*.sql
+recreate-*.sql
+temp-*.js
+temp-*.sql
+*-password.js
 
 # Logs
 logs
