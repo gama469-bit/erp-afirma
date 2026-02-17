@@ -9,7 +9,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 
 const app = express();
-const PORT = process.env.API_PORT || 3000;
+const PORT = process.env.PORT || process.env.API_PORT || 3000;
 
 app.use(bodyParser());
 
@@ -2078,7 +2078,7 @@ app.get('/api/projects', async (req, res) => {
 app.get('/api/projects/assignments', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated, pa.rate,
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role_name as role, pa.start_date, pa.end_date, pa.allocation_percentage, pa.rate,
               e.first_name, e.last_name, e.email, e.employee_code,
               p.name as project_name,
               mc_position.item as position,
@@ -2113,7 +2113,7 @@ app.get('/api/projects/:id/assignments', async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(
-      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.hours_allocated, pa.rate,
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role_name as role, pa.start_date, pa.end_date, pa.allocation_percentage, pa.rate,
               e.first_name, e.last_name, e.email, e.employee_code,
               mc_position.item as position,
               mc_area.item as area,
@@ -2560,7 +2560,7 @@ app.delete('/api/projects/:id', async (req, res) => {
 // Add employee to project
 app.post('/api/projects/:id/assignments', async (req, res) => {
   const { id } = req.params;
-  const { employee_id, role, start_date, end_date, hours_allocated, rate } = req.body;
+  const { employee_id, role, start_date, end_date, allocation_percentage, rate } = req.body;
   
   if (!employee_id) {
     return res.status(400).json({ error: 'Required field: employee_id' });
@@ -2594,10 +2594,10 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
     
     // Si no hay conflictos, proceder con la asignación
     const result = await db.query(
-      `INSERT INTO project_assignments (project_id, employee_id, role, start_date, end_date, hours_allocated, rate)
+      `INSERT INTO project_assignments (project_id, employee_id, role_name, start_date, end_date, allocation_percentage, rate)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, project_id, employee_id, role, start_date, end_date, hours_allocated, rate, created_at`,
-      [id, employee_id, role || null, start_date || null, end_date || null, hours_allocated || null, rate || 0]
+       RETURNING id, project_id, employee_id, role_name as role, start_date, end_date, allocation_percentage, rate, created_at`,
+      [id, employee_id, role || null, start_date || null, end_date || null, allocation_percentage || 100, rate || 0]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -2609,19 +2609,19 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
 // Update project assignment
 app.put('/api/projects/assignments/:assignmentId', async (req, res) => {
   const { assignmentId } = req.params;
-  const { role, start_date, end_date, hours_allocated, rate } = req.body;
+  const { role, start_date, end_date, allocation_percentage, rate } = req.body;
   
   try {
     const result = await db.query(
       `UPDATE project_assignments 
-       SET role = COALESCE($1, role),
+       SET role_name = COALESCE($1, role_name),
            start_date = COALESCE($2, start_date),
            end_date = COALESCE($3, end_date),
-           hours_allocated = COALESCE($4, hours_allocated),
+           allocation_percentage = COALESCE($4, allocation_percentage),
            rate = COALESCE($5, rate)
        WHERE id = $6
        RETURNING *`,
-      [role, start_date, end_date, hours_allocated, rate, assignmentId]
+      [role, start_date, end_date, allocation_percentage, rate, assignmentId]
     );
     
     if (result.rowCount === 0) {
@@ -2662,10 +2662,10 @@ app.get('/api/employees/:id/assignments', async (req, res) => {
         pa.project_id,
         p.name as project_name,
         p.description as project_description,
-        pa.role as role_in_project,
+        pa.role_name as role_in_project,
         pa.start_date,
         pa.end_date,
-        pa.hours_allocated,
+        pa.allocation_percentage,
         CASE 
           WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE THEN true 
           ELSE false 
@@ -2681,8 +2681,8 @@ app.get('/api/employees/:id/assignments', async (req, res) => {
     // Calculate summary
     const activeAssignments = result.rows.filter(a => a.is_active);
     const completedAssignments = result.rows.filter(a => !a.is_active);
-    const totalHours = result.rows.reduce((sum, a) => sum + (parseFloat(a.hours_allocated) || 0), 0);
-    const activeHours = activeAssignments.reduce((sum, a) => sum + (parseFloat(a.hours_allocated) || 0), 0);
+    const totalAllocation = result.rows.reduce((sum, a) => sum + (parseFloat(a.allocation_percentage) || 0), 0);
+    const activeAllocation = activeAssignments.reduce((sum, a) => sum + (parseFloat(a.allocation_percentage) || 0), 0);
     
     res.json({
       assignments: result.rows,
@@ -2690,9 +2690,9 @@ app.get('/api/employees/:id/assignments', async (req, res) => {
         total_projects: result.rows.length,
         active_projects: activeAssignments.length,
         completed_projects: completedAssignments.length,
-        total_hours_allocated: totalHours,
-        active_hours: activeHours,
-        average_hours_per_week: result.rows.length > 0 ? (totalHours / result.rows.length).toFixed(2) : 0
+        total_allocation: totalAllocation,
+        active_allocation: activeAllocation,
+        average_allocation: result.rows.length > 0 ? (totalAllocation / result.rows.length).toFixed(2) : 0
       }
     });
   } catch (err) {
@@ -2762,17 +2762,17 @@ app.get('/api/reports/resources-by-project', async (req, res) => {
         END) as active_resources,
         COALESCE(SUM(CASE 
           WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
-          THEN pa.hours_allocated 
-        END), 0) as total_active_hours,
+          THEN pa.allocation_percentage 
+        END), 0) as total_active_allocation,
         json_agg(
           json_build_object(
             'employee_id', e.id,
             'employee_name', e.first_name || ' ' || e.last_name,
             'position', mc_position.item,
-            'role', pa.role,
+            'role', pa.role_name,
             'start_date', pa.start_date,
             'end_date', pa.end_date,
-            'hours_allocated', pa.hours_allocated,
+            'allocation_percentage', pa.allocation_percentage,
             'is_active', CASE 
               WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
               THEN true 
@@ -2815,16 +2815,16 @@ app.get('/api/reports/projects-by-resource', async (req, res) => {
         END) as active_projects,
         COALESCE(SUM(CASE 
           WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
-          THEN pa.hours_allocated 
-        END), 0) as total_active_hours,
+          THEN pa.allocation_percentage 
+        END), 0) as total_active_allocation,
         json_agg(
           json_build_object(
             'project_id', p.id,
             'project_name', p.name,
-            'role', pa.role,
+            'role', pa.role_name,
             'start_date', pa.start_date,
             'end_date', pa.end_date,
-            'hours_allocated', pa.hours_allocated,
+            'allocation_percentage', pa.allocation_percentage,
             'is_active', CASE 
               WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE 
               THEN true 
@@ -2869,8 +2869,8 @@ app.get('/api/reports/assignment-summary', async (req, res) => {
            WHERE pa.employee_id = e.id 
            AND (pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE)
          )) as employees_in_bench,
-        (SELECT COALESCE(SUM(hours_allocated), 0) FROM project_assignments
-         WHERE end_date IS NULL OR end_date >= CURRENT_DATE) as total_active_hours`
+        (SELECT COALESCE(SUM(allocation_percentage), 0) FROM project_assignments
+         WHERE end_date IS NULL OR end_date >= CURRENT_DATE) as total_active_allocation`
     );
     
     // Proyectos con más recursos
@@ -2889,12 +2889,12 @@ app.get('/api/reports/assignment-summary', async (req, res) => {
       `SELECT 
         e.first_name || ' ' || e.last_name as employee_name,
         COUNT(DISTINCT pa.project_id) as project_count,
-        COALESCE(SUM(pa.hours_allocated), 0) as total_hours
+        COALESCE(SUM(pa.allocation_percentage), 0) as total_allocation
        FROM employees_v2 e
        INNER JOIN project_assignments pa ON e.id = pa.employee_id
        WHERE pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE
        GROUP BY e.id, e.first_name, e.last_name
-       ORDER BY total_hours DESC
+       ORDER BY total_allocation DESC
        LIMIT 5`
     );
     
@@ -3057,7 +3057,16 @@ app.patch('/api/job-openings/:id', async (req, res) => {
   }
 });
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`API server listening on port ${PORT}`);
+// Serve static frontend files
+app.use(express.static(path.join(__dirname, '..', 'src')));
+
+// Fallback to index.html for SPA
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'src', 'index.html'));
+});
+
+const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
+app.listen(PORT, HOST, () => {
+  console.log(`API server listening on ${HOST}:${PORT}`);
 });
 

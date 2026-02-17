@@ -4,7 +4,7 @@
   "description": "Sistema ERP Afirma - Gestión integral de empleados y recursos humanos.",
   "main": "src/js/app.js",
   "scripts": {
-    "start": "npm run server",
+    "start": "node server/api.js",
     "start:dev": "live-server src --port=8082 --host=127.0.0.1",
     "start:frontend": "npm run frontend",
     "api": "node server/api.js",

@@ -1,16 +1,6 @@
 // auth.js - Authentication utilities for ERP Afirma
 
 /**
- * Get API base URL based on environment
- */
-window.getApiUrl = function() {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return 'http://127.0.0.1:3000';
-    }
-    return '';
-};
-
-/**
  * Get authentication token from localStorage
  */
 function getAuthToken() {

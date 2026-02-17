@@ -5,21 +5,22 @@ const db = require('./db');
 
 async function runMigrations() {
   try {
-    // Array de migraciones en orden
+    // Array de migraciones en orden correcto
     const migrations = [
       '001_create_employees.sql',
       '002_create_candidates.sql',
       '003_create_departments.sql',
       '004_create_positions.sql',
+      '007_rename_departments_to_entities.sql',  // Renombrar ANTES de crear employees_v2
       '005_create_employees_v2.sql',
       '006_create_employee_relations.sql',
-      '007_rename_departments_to_entities.sql',
       '008_create_catalog_tables.sql',
-      '003_create_mastercode.sql',
+      '003_create_mastercode.sql',  // Después de que entities exista
       '009_create_employee_extended_info.sql',
       '010_update_employees_mastercode.sql',
       '011_fix_foreign_keys.sql',
       '012_add_address_fields.sql',
+      '012_create_inventory.sql',
       '013_add_expediente_fields.sql',
       '014_create_equipment.sql',
       '015_update_equipment_for_employees_v2.sql',
@@ -31,8 +32,10 @@ async function runMigrations() {
       '021_fix_candidates_nullable.sql',
       '021_create_project_indexes.sql',
       '022_create_project_assignment_indexes.sql',
-      '023_add_recruitment_tracking.sql',
-      '024_create_job_openings.sql'
+      '023_create_authentication_tables.sql',
+      '024_create_orders_of_work.sql',
+      '025_add_orders_of_work_extended_fields.sql',
+      '026_add_rate_to_project_assignments.sql'
     ];
 
     for (const migration of migrations) {

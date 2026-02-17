@@ -106,7 +106,7 @@ async function loadCatalogItems(catalogType) {
     `;
     
     try {
-        const response = await fetch(`http://127.0.0.1:3000/api/mastercode/${encodeURIComponent(catalogType)}`);
+        const response = await fetch(window.getApiUrl(`/api/mastercode/${encodeURIComponent(catalogType)}`));
         
         if (response.ok) {
             const items = await response.json();
@@ -203,7 +203,7 @@ async function addCatalogElement(event) {
     console.log('➕ Agregando elemento:', itemName);
     
     try {
-        const response = await fetch(`http://127.0.0.1:3000/api/mastercode/${encodeURIComponent(currentCatalogType)}`, {
+        const response = await fetch(window.getApiUrl(`/api/mastercode/${encodeURIComponent(currentCatalogType)}`), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -255,7 +255,7 @@ async function deleteCatalogItem(itemId, itemName) {
     console.log('🗑️ Eliminando elemento:', itemId, itemName);
     
     try {
-        const response = await fetch(`http://127.0.0.1:3000/api/mastercode/${encodeURIComponent(currentCatalogType)}/${itemId}`, {
+        const response = await fetch(window.getApiUrl(`/api/mastercode/${encodeURIComponent(currentCatalogType)}/${itemId}`), {
             method: 'DELETE'
         });
         

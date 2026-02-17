@@ -1496,7 +1496,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Cargar vacantes activas
             const vacantesUrl = window.getApiUrl ? window.getApiUrl('/api/job-openings') : '/api/job-openings';
             const vacantesResponse = await fetch(vacantesUrl);
+            
+            if (!vacantesResponse.ok) {
+                console.error('Error al cargar vacantes:', vacantesResponse.status);
+                return;
+            }
+            
             const vacantes = await vacantesResponse.json();
+            
+            // Verificar que la respuesta sea un array
+            if (!Array.isArray(vacantes)) {
+                console.error('La respuesta no es un array de vacantes:', vacantes);
+                return;
+            }
             
             const positionSelect = document.getElementById('candidate-position');
             if (positionSelect) {

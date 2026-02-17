@@ -284,11 +284,11 @@ async function ensureCatalogsLoaded() {
         console.log('🔄 Loading catalogs for employee form...');
         try {
             const [entities, positions, areas, projects, cells] = await Promise.all([
-                fetch('http://127.0.0.1:3000/api/mastercode/Entidad').then(r => r.json()).catch(() => []),
-                fetch('http://127.0.0.1:3000/api/mastercode/Puestos%20roles').then(r => r.json()).catch(() => []),
-                fetch('http://127.0.0.1:3000/api/mastercode/Areas').then(r => r.json()).catch(() => []),
-                fetch('http://127.0.0.1:3000/api/mastercode/Proyecto').then(r => r.json()).catch(() => []),
-                fetch('http://127.0.0.1:3000/api/mastercode/Celulas').then(r => r.json()).catch(() => [])
+                fetch(window.getApiUrl('/api/mastercode/Entidad')).then(r => r.json()).catch(() => []),
+                fetch(window.getApiUrl('/api/mastercode/Puestos%20roles')).then(r => r.json()).catch(() => []),
+                fetch(window.getApiUrl('/api/mastercode/Areas')).then(r => r.json()).catch(() => []),
+                fetch(window.getApiUrl('/api/mastercode/Proyecto')).then(r => r.json()).catch(() => []),
+                fetch(window.getApiUrl('/api/mastercode/Celulas')).then(r => r.json()).catch(() => [])
             ]);
 
             // Populate entities

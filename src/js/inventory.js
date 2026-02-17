@@ -10,7 +10,7 @@ console.log('📦 Sistema de inventario iniciado');
 // =====================================================
 
 const INVENTORY_CONFIG = {
-    API_BASE: 'http://localhost:3000/api',
+    API_BASE: window.getApiUrl('/api'),
     ENDPOINTS: {
         EMPLOYEES: '/employees-v2',
         INVENTORY: '/inventory',
@@ -427,7 +427,7 @@ async function loadInventoryFromDatabase() {
 // Funciones auxiliares para cargar datos
 async function fetchEquipment() {
     console.log('📦 Cargando equipos...');
-    const response = await fetch('http://localhost:3000/api/equipment');
+    const response = await fetch(window.getApiUrl('/api/equipment'));
     if (!response.ok) throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
     const data = await response.json();
     return data.map(eq => ({
@@ -454,7 +454,7 @@ async function fetchEmployees() {
         return await window.fetchEmployees();
     } else {
         // Fallback: usar el fetch directo si la función global no está disponible
-        const response = await fetch('http://localhost:3000/api/employees-v2');
+        const response = await fetch(window.getApiUrl('/api/employees-v2'));
         if (!response.ok) throw new Error(`Error HTTP ${response.status}: ${response.statusText}`);
         return await response.json();
     }
@@ -463,7 +463,7 @@ async function fetchEmployees() {
 async function fetchCategories() {
     console.log('📂 Cargando categorías...');
     try {
-        const response = await fetch('http://localhost:3000/api/mastercode/inventario-categorias');
+        const response = await fetch(window.getApiUrl('/api/mastercode/inventario-categorias'));
         if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
         const data = await response.json();
         return data.map(cat => cat.name || cat.nombre || cat).filter(Boolean);

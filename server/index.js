@@ -85,6 +85,81 @@ app.get('/api/debug/tables', async (req, res) => {
   }
 });
 
+// ========== AUTHENTICATION API ==========
+
+// Login endpoint (basic authentication)
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    console.log('🔐 Login attempt for:', email);
+    
+    // For MVP: Simple authentication with hardcoded credentials
+    // TODO: Replace with proper user table and password hashing
+    const validUsers = [
+      { email: 'admin@afirma.com', password: 'admin123', role: 'admin', name: 'Administrador' },
+      { email: 'rh@afirma.com', password: 'rh123', role: 'rh', name: 'Recursos Humanos' }
+    ];
+    
+    const user = validUsers.find(u => u.email === email && u.password === password);
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+    
+    // Generate simple token (for MVP only - use JWT in production)
+    const token = Buffer.from(`${email}:${Date.now()}`).toString('base64');
+    
+    res.json({
+      success: true,
+      token,
+      user: {
+        email: user.email,
+        role: user.role,
+        name: user.name
+      }
+    });
+  } catch (err) {
+    console.error('❌ Login error:', err);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// Get current user info
+app.get('/api/auth/me', (req, res) => {
+  const authHeader = req.headers['authorization'];
+  
+  if (!authHeader) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  
+  // For MVP: Basic token validation
+  const token = authHeader.replace('Bearer ', '');
+  
+  try {
+    const decoded = Buffer.from(token, 'base64').toString('utf-8');
+    const email = decoded.split(':')[0];
+    
+    // Return mock user (for MVP)
+    res.json({
+      success: true,
+      user: {
+        email,
+        role: email.includes('admin') ? 'admin' : 'rh',
+        name: email.includes('admin') ? 'Administrador' : 'Usuario'
+      }
+    });
+  } catch (err) {
+    res.status(401).json({ error: 'Token inválido' });
+  }
+});
+
+// Logout endpoint
+app.post('/api/auth/logout', (req, res) => {
+  // For MVP: Just acknowledge
+  res.json({ success: true, message: 'Sesión cerrada' });
+});
+
 // ========== EMPLOYEES V2 API (NORMALIZED) ==========
 
 // Get all employees with normalized data
@@ -693,6 +768,9 @@ app.delete('/api/candidates/:id', async (req, res) => {
     res.status(500).json({ error: 'Error deleting candidate' });
   }
 });
+
+// Import API routes from api.js
+require('./api')(app);
 
 // Serve static frontend files from the project's `src` folder
 app.use(express.static(path.join(__dirname, '..', 'src')));

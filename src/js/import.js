@@ -68,7 +68,7 @@ async function handleEmployeeFileUpload() {
   formData.append('file', file);
 
   try {
-    const response = await fetch('http://localhost:3000/api/upload-employees', {
+    const response = await fetch(window.getApiUrl('/api/upload-employees'), {
       method: 'POST',
       body: formData
     });
@@ -177,7 +177,7 @@ async function handleCandidateFileUpload() {
   formData.append('file', file);
 
   try {
-    const response = await fetch('http://localhost:3000/api/upload-candidates', {
+    const response = await fetch(window.getApiUrl('/api/upload-candidates'), {
       method: 'POST',
       body: formData
     });
