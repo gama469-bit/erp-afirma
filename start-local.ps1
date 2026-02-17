@@ -23,5 +23,5 @@ Write-Host "🌐 Iniciando servidor..." -ForegroundColor Green
 Write-Host "Accede a: http://localhost:3000" -ForegroundColor Magenta
 Write-Host ""
 
-# Iniciar servidor
-node server/index.js
+# Iniciar servidor (usando api.js que tiene autenticación real)
+node server/api.js
