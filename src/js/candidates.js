@@ -53,7 +53,8 @@ function renderCandidates(candidates) {
                     ${employeeAddedBadge}
                 </div>
             </div>
-            <div style="display:flex;gap:6px;margin-left:12px">
+            <div style="display:flex;gap:6px;margin-left:12px;flex-wrap:wrap;justify-content:flex-end">
+                ${candidate.cv_url ? `<button class="view-candidate-cv" data-id="${candidate.id}" title="Ver CV" style="padding:8px 12px;background:#10b981;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10b981'">📎 Ver CV</button>` : ''}
                 <button class="edit-candidate" data-id="${candidate.id}" style="padding:8px 12px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">✏️ Editar</button>
                 <button class="delete-candidate" data-id="${candidate.id}" style="padding:8px 12px;background:#ef4444;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:background 0.2s" onmouseover="this.style.background='#dc2626'" onmouseout="this.style.background='#ef4444'">🗑️ Eliminar</button>
             </div>
@@ -71,8 +72,10 @@ function clearCandidateForm() {
     document.getElementById('candidate-position').value = '';
     document.getElementById('candidate-status').value = 'En revisión'; 
     document.getElementById('candidate-notes').value = '';
+    document.getElementById('candidate-cv').value = '';
     document.getElementById('candidate-recruited-by-value').value = '';
     document.getElementById('candidate-hired-date-value').value = '';
+    document.getElementById('candidate-cv-url').value = '';
     document.getElementById('candidate-submit').textContent = 'Guardar';
 }
 
@@ -85,6 +88,7 @@ function populateCandidateForm(candidate){
     document.getElementById('candidate-position').value = candidate.position_applied || '';
     document.getElementById('candidate-status').value = candidate.status || 'En revisión';
     document.getElementById('candidate-notes').value = candidate.notes || '';
+    document.getElementById('candidate-cv-url').value = candidate.cv_url || '';
     document.getElementById('candidate-recruited-by-value').value = candidate.recruited_by || '';
     document.getElementById('candidate-hired-date-value').value = candidate.hired_date || '';
     document.getElementById('candidate-submit').textContent = 'Guardar cambios';

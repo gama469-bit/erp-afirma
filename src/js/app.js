@@ -1611,6 +1611,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.target === candidateModal) closeCandidateModal();
     });
 
+    // CV Viewer Modal controls
+    const cvViewerModal = document.getElementById('cv-viewer-modal');
+    const cvViewerClose = document.getElementById('cv-viewer-close');
+    
+    cvViewerClose?.addEventListener('click', () => {
+        cvViewerModal.style.display = 'none';
+        document.getElementById('cv-iframe').src = '';
+        document.getElementById('cv-loader').style.display = 'flex'; // Mostrar loader nuevamente
+    });
+    
+    cvViewerModal?.addEventListener('click', (e) => {
+        if (e.target === cvViewerModal) {
+            cvViewerModal.style.display = 'none';
+            document.getElementById('cv-iframe').src = '';
+            document.getElementById('cv-loader').style.display = 'flex'; // Mostrar loader nuevamente
+        }
+    });
+
     async function loadAndRender() {
         try {
             if (typeof window.showGridLoading === 'function') {
@@ -1855,6 +1873,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         const position = document.getElementById('candidate-position').value.trim();
         const status = document.getElementById('candidate-status').value.trim();
         const notes = document.getElementById('candidate-notes').value.trim();
+        const cvFile = document.getElementById('candidate-cv').files[0];
+        let cvUrl = document.getElementById('candidate-cv-url').value;
+        
+        // Subir CV si hay un nuevo archivo seleccionado
+        if (cvFile) {
+            try {
+                const formData = new FormData();
+                formData.append('file', cvFile);
+                formData.append('candidateId', id || 'new');
+                
+                const uploadUrl = window.getApiUrl ? window.getApiUrl('/api/candidates/upload-cv') : '/api/candidates/upload-cv';
+                const uploadRes = await fetch(uploadUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!uploadRes.ok) throw new Error('Error al subir CV');
+                
+                const uploadResult = await uploadRes.json();
+                cvUrl = uploadResult.cv_url;
+                console.log('✅ CV subido:', cvUrl);
+            } catch (err) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Advertencia',
+                    text: 'No se pudo subir el CV, pero se guardará el candidato sin el archivo',
+                    timer: 3000,
+                    showConfirmButton: false
+                });
+                console.error('Error subiendo CV:', err);
+            }
+        }
         
         // Si el status es "Contratado", asignar automáticamente el usuario logueado y la fecha
         let recruitedBy = null;
@@ -1889,7 +1939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
-        const payload = { first_name: first, last_name: last, email: email || null, phone: phone || null, position_applied: position, status, notes: notes || null, recruited_by: recruitedBy, hired_date: hiredDate };
+        const payload = { first_name: first, last_name: last, email: email || null, phone: phone || null, position_applied: position, status, notes: notes || null, recruited_by: recruitedBy, hired_date: hiredDate, cv_url: cvUrl || null };
         
         console.log('📤 Payload siendo enviado:', payload);
         
@@ -2118,8 +2168,55 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // delegate edit/delete clicks for candidates
     document.getElementById('candidate-list').addEventListener('click', async (e)=>{
+        const viewCv = e.target.closest('.view-candidate-cv');
         const edit = e.target.closest('.edit-candidate');
         const del = e.target.closest('.delete-candidate');
+        if (viewCv) {
+            const id = viewCv.dataset.id;
+            const candidates = await window.fetchCandidates();
+            const cand = candidates.find(x=> String(x.id) === String(id));
+            if (cand && cand.cv_url) {
+                // Mostrar CV en modal con iframe
+                const modal = document.getElementById('cv-viewer-modal');
+                const iframe = document.getElementById('cv-iframe');
+                const loader = document.getElementById('cv-loader');
+                const downloadLink = document.getElementById('cv-download-link');
+                const titleEl = document.getElementById('cv-viewer-title');
+                const nameEl = document.getElementById('cv-viewer-candidate-name');
+                
+                // Mostrar loader mientras carga
+                loader.style.display = 'flex';
+                iframe.style.display = 'none';
+                
+                // Construir URL desde el API (puerto 3000) para asegurar que los archivos se sirvan correctamente
+                let cvUrl = cand.cv_url;
+                if (cvUrl.startsWith('/')) {
+                    // Si es una URL relativa, usar el API como base
+                    const apiBase = window.getApiUrl ? window.getApiUrl('') : 'http://localhost:3000';
+                    cvUrl = apiBase + cvUrl;
+                }
+                
+                console.log('📄 CV PDF URL:', cvUrl);
+                
+                // Cargar PDF directamente en el iframe
+                iframe.src = cvUrl;
+                downloadLink.href = cvUrl;
+                titleEl.textContent = '📄 Ver Curriculum Vitae';
+                nameEl.textContent = `${cand.first_name || ''} ${cand.last_name || ''}`.trim();
+                
+                modal.style.display = 'flex';
+                console.log('✅ CV viewer modal abierto');
+            } else {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'CV no disponible',
+                    text: 'Este candidato no tiene un CV cargado',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }
+            return;
+        }
         if (edit) {
             const id = edit.dataset.id;
             const candidates = await window.fetchCandidates();

@@ -7,16 +7,25 @@ const XLSX = require('xlsx');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || process.env.API_PORT || 3000;
 
 app.use(bodyParser());
 
+// Configure static file serving for uploads (CVs, etc) - MUST BE FIRST
+const uploadsPath = path.join(__dirname, '..', 'public', 'uploads');
+console.log('📁 Static files serving configured at /uploads ->',  uploadsPath);
+app.use('/uploads', express.static(uploadsPath, {
+  dotfiles: 'allow',
+  index: false
+}));
+
 // Configure CORS to allow frontend requests
 app.use((req, res, next) => {
-  // Only log non-health check requests to reduce noise
-  if (!req.url.includes('/health')) {
+  // Only log non-health check and non-uploads requests to reduce noise
+  if (!req.url.includes('/health') && !req.url.includes('/uploads')) {
     console.log(`🌐 CORS middleware - ${req.method} ${req.url}`);
   }
   res.header('Access-Control-Allow-Origin', '*');
@@ -430,7 +439,7 @@ app.get('/api/candidates', async (req, res) => {
     // Intentar con los campos recruited_by y hired_date; si no existen, ignorarlos y retornar sin ellos
     const result = await db.query(`
       SELECT id, first_name, last_name, email, phone, position_applied, status, notes, 
-             recruited_by, hired_date, created_at 
+             recruited_by, hired_date,cv_url, created_at 
       FROM candidates
       WHERE status != 'Contratado' AND status != 'Deleted'
       ORDER BY id DESC
@@ -598,6 +607,71 @@ app.patch('/api/candidates/:id', async (req, res) => {
   } catch (err) {
     console.error('Error deleting candidate', err);
     res.status(500).json({ error: 'Error deleting candidate' });
+  }
+});
+
+// Upload CV for candidate
+app.post('/api/candidates/upload-cv', multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.pdf'].includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'));
+    }
+  },
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+}).single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const candidateId = req.body.candidateId;
+    if (!candidateId) {
+      return res.status(400).json({ error: 'Candidate ID is required' });
+    }
+
+    // Create uploads directory if it doesn't exist
+    const uploadsDir = path.join(__dirname, '..', 'public', 'uploads', 'cvs');
+    console.log('📂 Uploading to directory:', uploadsDir);
+    console.log('📂 __dirname:', __dirname);
+    
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      console.log('📂 Created uploads directory');
+    }
+
+    // Generate unique filename
+    const ext = path.extname(req.file.originalname);
+    const filename = `cv_candidate_${candidateId}_${Date.now()}${ext}`;
+    const filepath = path.join(uploadsDir, filename);
+
+    console.log('📝 File will be saved to:', filepath);
+
+    // Save file to disk
+    fs.writeFileSync(filepath, req.file.buffer);
+    console.log('✅ File saved successfully, checking if exists:', fs.existsSync(filepath));
+
+    // Generate URL for the file
+    const cvUrl = `/uploads/cvs/${filename}`;
+
+    console.log('✅ CV uploaded successfully:', cvUrl);
+    console.log('📋 Access URL:', cvUrl);
+
+    // Update candidate with CV URL if candidate ID is numeric (not 'new')
+    if (!isNaN(candidateId)) {
+      const updateResult = await db.query('UPDATE candidates SET cv_url=$1 WHERE id=$2 RETURNING *', [cvUrl, candidateId]);
+      if (updateResult.rowCount === 0) {
+        console.warn('⚠️ Candidate not found, but file was saved anyway');
+      }
+    }
+
+    res.json({ cv_url: cvUrl, message: 'CV uploaded successfully' });
+  } catch (err) {
+    console.error('Error uploading CV', err);
+    res.status(500).json({ error: 'Error uploading CV: ' + err.message });
   }
 });
 

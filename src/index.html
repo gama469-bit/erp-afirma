@@ -84,6 +84,39 @@
             border-color: #007bff;
             background-color: #f8f9fa;
         }
+
+        /* CV Viewer Modal Styles */
+        #cv-viewer-modal {
+            z-index: 9999 !important;
+        }
+        
+        #cv-viewer-modal .modal-content {
+            background: white;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+        
+        #cv-iframe {
+            background: white;
+            min-height: 600px;
+        }
+        
+        #cv-viewer-modal .modal-header {
+            background: linear-gradient(to right, #3b82f6, #2563eb);
+            color: white;
+        }
+        
+        #cv-viewer-modal .modal-header h3 {
+            color: white;
+        }
+        
+        #cv-download-link {
+            transition: all 0.2s ease;
+        }
+        
+        #cv-download-link:hover {
+            background-color: #2563eb !important;
+            transform: scale(1.05);
+        }
     </style>
     
     <!-- SweetAlert2 -->
@@ -1255,9 +1288,15 @@
                             <option value="Contratado">Contratado</option>
                         </select>
                         <textarea id="candidate-notes" placeholder="Notas (opcional)" style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff;font-family:Inter,Arial"></textarea>
+                        <div style="margin-bottom:10px;">
+                            <label style="display:block;margin-bottom:8px;font-weight:500;font-size:13px;">📄 CV del Candidato (PDF)</label>
+                            <input type="file" id="candidate-cv" accept=".pdf" style="width:100%;padding:10px;border:2px dashed #e6eef8;border-radius:8px;background:#fbfdff;cursor:pointer;">
+                            <small style="display:block;margin-top:4px;color:#9ca3af;">Formato soportado: PDF únicamente</small>
+                        </div>
                         <!-- Campos ocultos para guardar automáticamente -->
                         <input type="hidden" id="candidate-recruited-by-value">
                         <input type="hidden" id="candidate-hired-date-value">
+                        <input type="hidden" id="candidate-cv-url">
                         <div style="margin-top:16px;display:flex;gap:8px">
                             <button type="submit" id="candidate-submit">Guardar</button>
                         </div>
@@ -1939,6 +1978,36 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal para ver CV -->
+    <div id="cv-viewer-modal" class="modal" style="display:none; z-index:9999">
+        <div class="modal-content" style="width:90%;height:90%;max-width:1200px;display:flex;flex-direction:column;padding:0">
+            <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid #e5e7eb">
+                <div>
+                    <h3 id="cv-viewer-title" style="margin:0">Curriculum Vitae</h3>
+                    <small id="cv-viewer-candidate-name" style="color:#6b7280;margin-top:5px;display:block"></small>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center">
+                    <a id="cv-download-link" href="#" download style="padding:8px 12px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;text-decoration:none;font-size:13px">⬇️ Descargar</a>
+                    <button type="button" id="cv-viewer-close" style="background:none;border:none;font-size:28px;cursor:pointer;color:#6b7280">&times;</button>
+                </div>
+            </div>
+            <div style="flex:1;overflow:auto;background:#f3f4f6;position:relative">
+                <!-- Loading indicator -->
+                <div id="cv-loader" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.9);z-index:1000;flex-direction:column;gap:15px">
+                    <div style="width:50px;height:50px;border:4px solid #e5e7eb;border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite"></div>
+                    <p style="color:#6b7280;margin:0">Cargando documento...</p>
+                </div>
+                <iframe id="cv-iframe" style="width:100%;height:100%;border:none;margin:0;padding:0;display:none;background:white" onload="document.getElementById('cv-loader').style.display='none';this.style.display='block'"></iframe>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 
     <script src="js/config.js"></script>
     <script src="js/employees.js"></script>
