@@ -2270,13 +2270,25 @@ app.delete('/api/orders-of-work/:id', async (req, res) => {
 });
 
 // Listar todas las OTs
+// Listar todas las OTs con sus proyectos (relación M:N)
+// Cada fila representa una relación OT × Proyecto
 app.get('/api/orders-of-work', async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT ow.*, p.name as project_name 
+      SELECT 
+        ow.*,
+        p.id as project_id,
+        p.name as project_name,
+        p.project_manager as responsable_proyecto,
+        p.cbt_responsible as cbt_responsable,
+        p.start_date as project_start_date,
+        p.end_date as project_end_date,
+        por.id as relation_id,
+        por.created_at as relation_created_at
       FROM orders_of_work ow
-      LEFT JOIN projects p ON ow.project_id = p.id
-      ORDER BY ow.created_at DESC
+      LEFT JOIN project_ot_relations por ON ow.id = por.ot_id
+      LEFT JOIN projects p ON por.project_id = p.id
+      ORDER BY ow.created_at DESC, p.name
     `);
     res.json(result.rows);
   } catch (err) {
@@ -2285,14 +2297,19 @@ app.get('/api/orders-of-work', async (req, res) => {
   }
 });
 
-// Listar OTs por proyecto
+// Listar OTs por proyecto (usando tabla intermedia)
 app.get('/api/projects/:projectId/orders-of-work', async (req, res) => {
   const { projectId } = req.params;
   try {
     const result = await db.query(`
-      SELECT * FROM orders_of_work 
-      WHERE project_id = $1 
-      ORDER BY created_at DESC
+      SELECT 
+        ow.*,
+        por.id as relation_id,
+        por.created_at as relation_created_at
+      FROM orders_of_work ow
+      INNER JOIN project_ot_relations por ON ow.id = por.ot_id
+      WHERE por.project_id = $1 
+      ORDER BY ow.created_at DESC
     `, [projectId]);
     res.json(result.rows);
   } catch (err) {
@@ -2301,23 +2318,106 @@ app.get('/api/projects/:projectId/orders-of-work', async (req, res) => {
   }
 });
 
-// Importación masiva de OTs desde CSV/Excel
+// Importación masiva de OTs desde CSV/Excel con lógica M:N
 app.post('/api/orders-of-work/import', async (req, res) => {
-  const { orders } = req.body;
+  const { orders, createProjectsIfNotExist = true } = req.body;
   
   if (!Array.isArray(orders) || orders.length === 0) {
     return res.status(400).json({ error: 'Se requiere un array de órdenes de trabajo' });
   }
 
-  const results = { success: [], failed: [], warnings: [] };
+  const results = { 
+    success: [], 
+    failed: [], 
+    warnings: [],
+    duplicatesInFile: [],
+    skipped: [], // OTs que ya existen y no se modifican
+    updated: []  // OTs que ya existen y se actualiza solo el estado
+  };
+
+  // Helper: Encontrar o crear proyecto
+  async function findOrCreateProject(projectName, projectData = {}) {
+    if (!projectName || projectName.trim() === '') {
+      return null;
+    }
+
+    // Buscar proyecto existente por nombre (case-insensitive)
+    const existing = await db.query(
+      `SELECT id, name FROM projects WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+      [projectName.trim()]
+    );
+
+    if (existing.rows.length > 0) {
+      return existing.rows[0];
+    }
+
+    // Si no existe y está habilitado crear proyectos
+    if (createProjectsIfNotExist) {
+      const currentYear = new Date().getFullYear();
+      const defaultStartDate = `${currentYear}-01-02`;
+      const defaultEndDate = `${currentYear}-12-31`;
+
+      const newProject = await db.query(
+        `INSERT INTO projects (
+          name, 
+          start_date, 
+          end_date, 
+          status,
+          project_manager,
+          cbt_responsible,
+          project_leader,
+          description
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [
+          projectName.trim(),
+          projectData.start_date || defaultStartDate,
+          projectData.end_date || defaultEndDate,
+          projectData.status || 'Activo',
+          projectData.project_manager || null,
+          projectData.cbt_responsible || null,
+          projectData.project_leader || null,
+          projectData.description || `Proyecto creado automáticamente desde importación de OT`
+        ]
+      );
+
+      return newProject.rows[0];
+    }
+
+    return null;
+  }
+
+  // Detectar duplicados dentro del archivo
+  const otCodesInFile = {};
+  orders.forEach((order, index) => {
+    const code = order.ot_code?.trim();
+    if (code) {
+      if (!otCodesInFile[code]) {
+        otCodesInFile[code] = [];
+      }
+      otCodesInFile[code].push({ index, projectName: order.nombre_proyecto });
+    }
+  });
+
+  // Identificar duplicados
+  Object.keys(otCodesInFile).forEach(code => {
+    if (otCodesInFile[code].length > 1) {
+      results.duplicatesInFile.push({
+        ot_code: code,
+        occurrences: otCodesInFile[code].length,
+        projects: otCodesInFile[code].map(o => o.projectName),
+        message: `OT duplicada en el archivo: se creará 1 OT con ${otCodesInFile[code].length} proyectos`
+      });
+    }
+  });
 
   try {
+    // Procesar cada OT del archivo
+    const processedOTs = new Map(); // Mapeo de ot_code -> ot_id para evitar duplicados
+    const processedOTProjects = new Set(); // Set para evitar duplicar relación OT-Proyecto
+
     for (const order of orders) {
       const { 
-        project_id,
         ot_code,
-        folio_principal_santec,
-        folio_santec,
         nombre_proyecto,
         status,
         description,
@@ -2333,8 +2433,6 @@ app.post('/api/orders-of-work/import', async (req, res) => {
         semaforo_plazo,
         lider_delivery,
         autorizacion_rdp,
-        responsable_proyecto,
-        cbt_responsable,
         proveedor,
         fecha_inicio_real,
         fecha_fin_real,
@@ -2354,63 +2452,225 @@ app.post('/api/orders-of-work/import', async (req, res) => {
         vobo_front_negocio,
         fecha_vobo_front_negocio,
         horas,
-        porcentaje_ejecucion
+        porcentaje_ejecucion,
+        folio_principal_santec,
+        folio_santec,
+        // Datos del proyecto
+        responsable_proyecto,
+        cbt_responsable,
+        project_leader
       } = order;
 
       // Validar campos requeridos
-      if (!ot_code) {
+      if (!ot_code || !ot_code.trim()) {
         results.failed.push({ order, error: 'Número OT es requerido' });
         continue;
       }
 
-      if (!project_id) {
-        results.failed.push({ order, error: 'ID de proyecto es requerido' });
-        continue;
-      }
+      const otCodeTrimmed = ot_code.trim();
 
       try {
-        const insertResult = await db.query(`
-          INSERT INTO orders_of_work (
-            project_id, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
-            status, description, tipo_servicio, tecnologia, aplicativo,
-            fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
-            horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
-            autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
-            fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
-            ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
-            costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
-            clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
-            fecha_vobo_front_negocio, horas, porcentaje_ejecucion
-          )
-          VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-            $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41
-          )
-          RETURNING *
-        `, [
-          project_id, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
-          status || 'Pendiente', description, tipo_servicio, tecnologia, aplicativo,
-          fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
-          horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
-          autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
-          fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
-          ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
-          costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
-          clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
-          fecha_vobo_front_negocio, horas, porcentaje_ejecucion
-        ]);
+        // 1. Verificar si la OT ya existe en la BD
+        const existingOT = await db.query(
+          `SELECT id, ot_code, status FROM orders_of_work WHERE LOWER(ot_code) = LOWER($1) LIMIT 1`,
+          [otCodeTrimmed]
+        );
 
-        results.success.push(insertResult.rows[0]);
+        let otId;
+        let isNewOT = false;
+        let statusChanged = false;
+
+        if (existingOT.rows.length > 0) {
+          // OT YA EXISTE
+          otId = existingOT.rows[0].id;
+          const currentStatus = existingOT.rows[0].status;
+
+          // Verificar si el estado cambió
+          if (status && status !== currentStatus) {
+            // Actualizar solo el estado
+            await db.query(
+              `UPDATE orders_of_work SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+              [status, otId]
+            );
+            statusChanged = true;
+            results.updated.push({
+              ot_code: otCodeTrimmed,
+              old_status: currentStatus,
+              new_status: status,
+              message: 'OT existente - estado actualizado'
+            });
+          } else {
+            // OT existe y no hay cambios - NO procesar proyecto
+            // Solo añadir a skipped una vez (sin duplicar)
+            if (!processedOTs.has(otCodeTrimmed.toLowerCase())) {
+              results.skipped.push({
+                ot_code: otCodeTrimmed,
+                message: 'OT ya existe con las mismas propiedades'
+              });
+            }
+            // Marcar como procesada para evitar duplicados
+            processedOTs.set(otCodeTrimmed.toLowerCase(), otId);
+            // IMPORTANTE: NO continuar con el procesamiento de proyecto
+            continue;
+          }
+
+          // Marcar como procesada (evitar crear duplicados en mismo archivo)
+          processedOTs.set(otCodeTrimmed.toLowerCase(), otId);
+
+        } else {
+          // OT NO EXISTE - Crear nueva OT (solo si no fue procesada en este mismo archivo)
+          if (processedOTs.has(otCodeTrimmed.toLowerCase())) {
+            otId = processedOTs.get(otCodeTrimmed.toLowerCase());
+          } else {
+            const insertResult = await db.query(`
+              INSERT INTO orders_of_work (
+                ot_code, folio_principal_santec, folio_santec,
+                status, description, tipo_servicio, tecnologia, aplicativo,
+                fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
+                horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
+                autorizacion_rdp, proveedor,
+                fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
+                ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
+                costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
+                clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
+                fecha_vobo_front_negocio, horas, porcentaje_ejecucion
+              )
+              VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+                $31, $32, $33, $34, $35, $36, $37
+              )
+              RETURNING *
+            `, [
+              otCodeTrimmed, folio_principal_santec, folio_santec,
+              status || 'Pendiente', description, tipo_servicio, tecnologia, aplicativo,
+              fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
+              horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
+              autorizacion_rdp, proveedor,
+              fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
+              ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
+              costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
+              clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
+              fecha_vobo_front_negocio, horas, porcentaje_ejecucion
+            ]);
+
+            otId = insertResult.rows[0].id;
+            isNewOT = true;
+            processedOTs.set(otCodeTrimmed.toLowerCase(), otId);
+          }
+        }
+
+        // 2. Procesar el proyecto (encontrar, usar existente, o crear)
+        let project = null;
+        
+        // PRIORIDAD 1: Si el usuario seleccionó un proyecto existente del dropdown
+        if (order.useExistingProject && order.existingProjectId) {
+          const existingProjectQuery = await db.query(
+            `SELECT id, name FROM projects WHERE id = $1`,
+            [order.existingProjectId]
+          );
+          
+          if (existingProjectQuery.rows.length > 0) {
+            project = existingProjectQuery.rows[0];
+          } else {
+            results.warnings.push({
+              ot_code: otCodeTrimmed,
+              warning: `Proyecto con ID ${order.existingProjectId} no encontrado`
+            });
+          }
+        } 
+        // PRIORIDAD 2: Si debe crear un proyecto nuevo
+        else if (nombre_proyecto && order.createNewProject !== false) {
+          project = await findOrCreateProject(nombre_proyecto, {
+            project_manager: responsable_proyecto,
+            cbt_responsible: cbt_responsable,
+            project_leader: project_leader
+          });
+        }
+        // PRIORIDAD 3: No crear ni vincular (checkbox desactivado)
+        else if (order.createNewProject === false) {
+          results.warnings.push({
+            ot_code: otCodeTrimmed,
+            warning: 'OT creada sin proyecto (creación desactivada por usuario)'
+          });
+        }
+
+        if (project) {
+          // Validar que esta combinación OT-Proyecto no se haya procesado ya en este batch
+          const otProjectKey = `${otId}|${project.id}`;
+          
+          if (processedOTProjects.has(otProjectKey)) {
+            // Ya se procesó esta combinación en este batch - omitir
+            results.warnings.push({
+              ot_code: otCodeTrimmed,
+              warning: `Relación OT-Proyecto duplicada en el archivo (OT: ${otCodeTrimmed}, Proyecto: ${project.name})`
+            });
+          } else {
+            // 3. Vincular OT con Proyecto (si no existe la relación en BD)
+            const existingRelation = await db.query(
+              `SELECT id FROM project_ot_relations WHERE project_id = $1 AND ot_id = $2`,
+              [project.id, otId]
+            );
+
+            if (existingRelation.rows.length === 0) {
+              await db.query(
+                `INSERT INTO project_ot_relations (project_id, ot_id) VALUES ($1, $2)`,
+                [project.id, otId]
+              );
+
+              results.success.push({
+                ot_code: otCodeTrimmed,
+                ot_id: otId,
+                project_id: project.id,
+                project_name: project.name,
+                action: isNewOT ? 'created' : (statusChanged ? 'updated' : 'linked'),
+                message: isNewOT ? 'OT creada y vinculada' : (statusChanged ? 'OT actualizada y vinculada' : 'OT existente vinculada a proyecto')
+              });
+              
+              // Marcar esta combinación como procesada
+              processedOTProjects.add(otProjectKey);
+            } else {
+              // Relación ya existe en BD
+              if (!isNewOT && !statusChanged) {
+                // Ya estaba registrado en results.skipped
+              } else {
+                results.warnings.push({
+                  ot_code: otCodeTrimmed,
+                  warning: `OT ya vinculada al proyecto "${project.name}"`
+                });
+              }
+            }
+          }
+        } else if (nombre_proyecto && !order.useExistingProject && order.createNewProject !== false) {
+          // Solo advertir si esperaba crear proyecto pero no pudo
+          results.warnings.push({
+            ot_code: otCodeTrimmed,
+            warning: `Proyecto "${nombre_proyecto}" no encontrado y createProjectsIfNotExist = false`
+          });
+        }
+
       } catch (dbErr) {
-        console.error('Error inserting order:', dbErr);
-        results.failed.push({ order, error: dbErr.message });
+        console.error('Error processing order:', dbErr);
+        results.failed.push({ 
+          ot_code: otCodeTrimmed, 
+          order, 
+          error: dbErr.message 
+        });
       }
     }
 
     res.json({
-      message: `Importación completada: ${results.success.length} exitosas, ${results.failed.length} fallidas`,
+      message: `Importación completada: ${results.success.length} exitosas, ${results.failed.length} fallidas, ${results.updated.length} actualizadas, ${results.skipped.length} omitidas`,
+      summary: {
+        created: results.success.filter(s => s.action === 'created').length,
+        linked: results.success.filter(s => s.action === 'linked').length,
+        updated: results.updated.length,
+        skipped: results.skipped.length,
+        failed: results.failed.length,
+        warnings: results.warnings.length,
+        duplicatesInFile: results.duplicatesInFile.length
+      },
       results
     });
   } catch (err) {

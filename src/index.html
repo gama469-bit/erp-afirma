@@ -147,7 +147,7 @@
 
         <main class="content">
                         <!-- Vista para importar OTs desde Excel -->
-                        <section id="importar-ots" class="card view" style="display:none;max-width:700px;margin:0 auto;">
+                        <section id="importar-ots" class="card view" style="display:none;max-width:1000px;margin:0 auto;">
                             <h2>Importar OTs desde Excel</h2>
                             <div style="margin-bottom:16px;">
                                 <button type="button" id="ot-template-btn" class="btn-add">📥 Descargar plantilla ejemplo</button>
@@ -155,24 +155,52 @@
                             <div style="margin-bottom:16px;">
                                 <input type="file" id="ot-import-file-standalone" accept=".xlsx,.xls,.csv">
                             </div>
+                            <div style="margin-bottom:16px;">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="ot-create-projects-checkbox" checked>
+                                    <span>Crear todos los proyectos inexistentes</span>
+                                </label>
+                            </div>
                             <div id="ot-import-preview-area" style="display:none;">
-                                <h3>Previsualización y edición</h3>
-                                <table id="ot-import-preview-table" style="width:100%;border-collapse:collapse;">
-                                    <thead>
-                                        <tr>
-                                            <th>Número OT</th>
-                                            <th>Folio Principal Santec</th>
-                                            <th>Folio Santec</th>
-                                            <th>Nombre Proyecto</th>
-                                            <th>Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody></tbody>
-                                </table>
+                                <!-- Duplicados en el archivo -->
+                                <div id="ot-duplicates-alert" style="display:none;background:#fff3cd;border:1px solid #ffc107;padding:12px;border-radius:4px;margin-bottom:16px;">
+                                    <strong>⚠️ OTs duplicadas en el archivo:</strong>
+                                    <div id="ot-duplicates-list" style="margin-top:8px;font-size:14px;"></div>
+                                </div>
+                                
+                                <!-- OTs que ya existen y se omitirán -->
+                                <div id="ot-skipped-alert" style="display:none;background:#e7f3ff;border:1px solid #2196F3;padding:12px;border-radius:4px;margin-bottom:16px;">
+                                    <strong>ℹ️ OTs que ya existen y NO se crearán:</strong>
+                                    <div id="ot-skipped-list" style="margin-top:8px;font-size:14px;"></div>
+                                </div>
+                                
+                                <!-- OTs que se actualizarán (solo estado) -->
+                                <div id="ot-updated-alert" style="display:none;background:#d1ecf1;border:1px solid #17a2b8;padding:12px;border-radius:4px;margin-bottom:16px;">
+                                    <strong>🔵 OTs que ya existen pero se actualizará el estado:</strong>
+                                    <div id="ot-updated-list" style="margin-top:8px;font-size:14px;"></div>
+                                </div>
+                                
+                                <h3>Previsualización (OTs a crear/vincular)</h3>
+                                <div style="overflow-x:auto;">
+                                    <table id="ot-import-preview-table" style="width:100%;border-collapse:collapse;">
+                                        <thead>
+                                            <tr>
+                                                <th style="min-width:120px">Número OT</th>
+                                                <th style="min-width:150px">Nombre Proyecto</th>
+                                                <th style="min-width:250px">Proyecto (Seleccionar o Crear)</th>
+                                                <th style="min-width:100px">Estado</th>
+                                                <th style="min-width:150px">Tipo Servicio</th>
+                                                <th style="min-width:80px">Acción</th>
+                                                <th style="min-width:80px">Eliminar</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
                             </div>
                             <div style="margin-top:16px;display:flex;gap:8px;">
-                                <button type="button" id="ot-import-save-btn" class="btn-add" style="display:none;">Guardar OTs</button>
-                                <button type="button" id="ot-import-cancel-btn" class="btn-cancel" style="display:none;">Cancelar</button>
+                                <button type="button" id="ot-import-save-btn" class="btn-add" style="display:none;">💾 Guardar OTs</button>
+                                <button type="button" id="ot-import-cancel-btn" class="btn-cancel" style="display:none;">❌ Cancelar</button>
                             </div>
                         </section>
 
