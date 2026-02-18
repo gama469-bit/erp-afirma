@@ -29,4 +29,4 @@ ENV NODE_ENV=production
 ENV PORT=8080
 
 # Comando de inicio
-CMD ["node", "server/index.js"]
+CMD ["node", "server/api.js"]
