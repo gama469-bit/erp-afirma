@@ -98,4 +98,133 @@ ecosystem.config.js
 
 # Backup files
 backup/
+
+# ============================================
+# Archivos de Desarrollo y Testing
+# ============================================
+
+# Scripts de testing y debugging
+test-*.js
+debug-*.js
+diagnostico.js
+simple-*.js
+
+# Scripts de desarrollo y utilidades
+apply-*.js
+setup-*.js
+fix-*.js
+distribute-*.js
+analyze-*.js
+investigate-*.js
+query-*.js
+list-*.js
+rollback-*.js
+backup-*.js
+validate-*.js
+drop-*.js
+add-*.js
+
+# Scripts de deployment con credenciales hardcodeadas
+start-api.ps1
+start-local.ps1
+deploy-gcp.sh
+run-migrations-gcp.ps1
+auth-and-deploy.bat
+authorize-and-migrate.*
+setup-gcloud-path.*
+inicio*.bat
+gcp-setup.bat
+setup-iam-auth.bat
+
+# ============================================
+# Documentación (excepto README.md)
+# ============================================
+
+# Archivos de análisis y documentación
+ANALISIS_*.md
+IMPLEMENTACION_*.md
+FRONTEND_*.md
+MEJORAS-*.md
+MIGRACIONES-GUIA.md
+SCRIPTS-INICIO.md
+PLAN_*.md
+PROYECTO_*.md
+RESUMEN*.md
+ESTADO*.md
+DESPLIEGUE*.md
+CONFIRMACION*.md
+DEPLOYMENT.md
+GOOGLE-CLOUD-DEPLOY.md
+GCP-*.md
+ACCION-*.md
+QUICK_START.md
+SETUP_GUIDE.md
+NORMALIZATION_REPORT.md
+DATABASE_SCHEMA.md
+TECNOLOGIAS.md
+REFERENCIA-*.md
+DOCUMENTACION*.md
+PROJECT_*.md
+FINAL_*.md
+
+# ============================================
+# Archivos de Ejemplo y Temporales
+# ============================================
+
+# Archivos de ejemplo
+ejemplo*.txt
+*_ejemplo.*
+OrdenesTrabajo*.xlsx
+OrdenesTrabajo*.csv
+sample*.js
+generate_excel_sample.js
+
+# Backups SQL y dumps
+*backup*.sql
+*dump*.sql
+backup_produccion*.sql
+BD_afirmav1.sql
+
+# SQL scripts de rollback y fixes
+ROLLBACK-*.sql
+fix-*.sql
+create-job-openings.sql
+
+# Logs y archivos temporales
+migration-log.txt
+health_out.json
+health_err.txt
+
+# Archivos de seeds (excepto los necesarios)
+server/seeds/seed_employees.sql
+server/seeds/seed_equipment.sql
+
+# Scripts en carpeta /scripts (si existen)
+scripts/*.js
+
+# Service accounts y credenciales GCP
+gcp-service-account.json
+*.json.key
+service-account*.json
+
+# Archivos de configuración de deployment
+app.json
+app.yaml
+service.yaml
+cloudrun-service.yaml
+cloudbuild.yaml
+Procfile
+
+# Keep only essential files for production:
+# - server/api.js
+# - server/db.js
+# - server/frontend.js
+# - server/migrate.js
+# - server/migrations/*.sql
+# - src/
+# - package.json
+# - package-lock.json
+# - README.md
+# - Dockerfile
+# - .dockerignore
 *.bak
