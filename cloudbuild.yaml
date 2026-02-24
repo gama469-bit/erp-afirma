@@ -1,5 +1,42 @@
 steps:
+# Paso 1: Construir imagen Docker
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-f', 'Dockerfile.cloudrun', '-t', 'gcr.io/erp-afirma-solutions/erp-afirma', '.']
+  args: 
+    - 'build'
+    - '-f'
+    - 'Dockerfile.cloudrun'
+    - '-t'
+    - 'gcr.io/$PROJECT_ID/erp-afirma:$COMMIT_SHA'
+    - '-t'
+    - 'gcr.io/$PROJECT_ID/erp-afirma:latest'
+    - '.'
+
+# Paso 2: Publicar imagen (automático al final)
+# Paso 3: Desplegar a Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args:
+    - 'run'
+    - 'deploy'
+    - 'erp-afirma'
+    - '--image'
+    - 'gcr.io/$PROJECT_ID/erp-afirma:$COMMIT_SHA'
+    - '--region'
+    - 'us-central1'
+    - '--platform'
+    - 'managed'
+    - '--allow-unauthenticated'
+    - '--add-cloudsql-instances'
+    - 'erp-afirma-solutions:us-central1:erp-afirma-db'
+
+# Publicar imágenes al Container Registry
 images:
-- 'gcr.io/erp-afirma-solutions/erp-afirma'
+  - 'gcr.io/$PROJECT_ID/erp-afirma:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/erp-afirma:latest'
+
+# Configuración del timeout y opciones
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'N1_HIGHCPU_8'
+
+timeout: '1200s'

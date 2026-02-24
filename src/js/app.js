@@ -78,8 +78,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const otImportPreviewTable = document.getElementById('ot-import-preview-table');
     const otImportSaveBtn = document.getElementById('ot-import-save-btn');
     const otImportCancelBtn = document.getElementById('ot-import-cancel-btn');
+    const otCreateProjectsCheckbox = document.getElementById('ot-create-projects-checkbox');
+    const otDuplicatesAlert = document.getElementById('ot-duplicates-alert');
+    const otDuplicatesList = document.getElementById('ot-duplicates-list');
+    const otSkippedAlert = document.getElementById('ot-skipped-alert');
+    const otSkippedList = document.getElementById('ot-skipped-list');
+    const otUpdatedAlert = document.getElementById('ot-updated-alert');
+    const otUpdatedList = document.getElementById('ot-updated-list');
     let otImportPreviewRows = [];
     let availableProjects = [];
+    let existingOTsInDB = {}; // Mapa de ot_code -> [OTs]
 
     // Cargar proyectos disponibles
     async function loadAvailableProjects() {
@@ -89,6 +97,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (err) {
             console.error('Error loading projects:', err);
             availableProjects = [];
+        }
+    }
+
+    // Cargar OTs existentes de la base de datos para detectar duplicados
+    async function loadExistingOTs() {
+        try {
+            const response = await fetch(window.getApiUrl ? window.getApiUrl('/api/orders-of-work') : '/api/orders-of-work');
+            const allOTs = await response.json();
+            // Crear mapa de ot_code -> [OTs] para búsqueda rápida
+            existingOTsInDB = allOTs.reduce((map, ot) => {
+                const code = ot.ot_code ? ot.ot_code.toLowerCase() : '';
+                if (code) {
+                    if (!map[code]) {
+                        map[code] = [];
+                    }
+                    map[code].push(ot);
+                }
+                return map;
+            }, {});
+        } catch (err) {
+            console.error('Error loading existing OTs:', err);
+            existingOTsInDB = {};
         }
     }
 
@@ -150,12 +180,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (otImportFileStandalone) {
+        // Listener para sincronizar checkbox global con checks individuales
+        if (otCreateProjectsCheckbox) {
+            otCreateProjectsCheckbox.addEventListener('change', function(e) {
+                const isChecked = e.target.checked;
+                // Actualizar todos los rows
+                otImportPreviewRows.forEach(row => {
+                    row.createNewProject = isChecked;
+                    if (!isChecked) {
+                        // Si se desmarca global, limpiar proyecto seleccionado también
+                        row.selectedProjectId = null;
+                    }
+                });
+                renderOTImportPreview();
+            });
+        }
+        
         otImportFileStandalone.addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file) return;
             
-            // Cargar proyectos disponibles
-            await loadAvailableProjects();
+            // Cargar proyectos y OTs existentes
+            await Promise.all([loadAvailableProjects(), loadExistingOTs()]);
             
             // Cargar XLSX si no existe
             if (!window.XLSX) {
@@ -298,17 +344,124 @@ document.addEventListener('DOMContentLoaded', async () => {
                     otImportPreviewRows.push(otData);
                 }
                 
-                renderOTImportPreview();
-                
-                // Mostrar advertencia si hay proyectos no encontrados
-                const errorCount = otImportPreviewRows.filter(r => r.hasError).length;
-                if (errorCount > 0) {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'Proyectos no encontrados',
-                        text: `${errorCount} OT(s) no tienen un proyecto válido. Las filas en rojo requieren seleccionar un proyecto existente.`
+                // DETECCIÓN DE DUPLICADOS Y CLASIFICACIÓN
+                const duplicatesInFile = {};
+                const duplicateOTProjects = {}; // Mapa para detectar OT+Proyecto duplicado
+                const toCreate = [];
+                const toSkip = [];
+                const toUpdate = [];
+
+                // Primera pasada: detectar duplicados OT+Proyecto
+                otImportPreviewRows.forEach((row, index) => {
+                    const otCodeLower = row.ot_code ? row.ot_code.toString().toLowerCase() : '';
+                    const projectNameLower = row.nombre_proyecto ? row.nombre_proyecto.toString().toLowerCase() : '';
+                    const otProjectKey = `${otCodeLower}|${projectNameLower}`;
+                    
+                    if (otCodeLower && projectNameLower) {
+                        if (!duplicateOTProjects[otProjectKey]) {
+                            duplicateOTProjects[otProjectKey] = [];
+                        }
+                        duplicateOTProjects[otProjectKey].push(index);
+                    }
+                });
+
+                // Marcar duplicados OT+Proyecto (solo mantener el último)
+                const indicesToRemove = new Set();
+                Object.keys(duplicateOTProjects).forEach(key => {
+                    const indices = duplicateOTProjects[key];
+                    if (indices.length > 1) {
+                        // Mantener solo el último (índice más alto), marcar los demás para remover
+                        for (let i = 0; i < indices.length - 1; i++) {
+                            indicesToRemove.add(indices[i]);
+                        }
+                    }
+                });
+
+                // Filtrar duplicados OT+Proyecto (eliminar todos excepto el último)
+                otImportPreviewRows = otImportPreviewRows.filter((row, index) => !indicesToRemove.has(index));
+
+                otImportPreviewRows.forEach((row, index) => {
+                    const otCodeLower = row.ot_code ? row.ot_code.toString().toLowerCase() : '';
+                    
+                    // Verificar duplicados en el archivo (mismo OT, distintos proyectos)
+                    if (otCodeLower) {
+                        if (!duplicatesInFile[otCodeLower]) {
+                            duplicatesInFile[otCodeLower] = [];
+                        }
+                        duplicatesInFile[otCodeLower].push({ index, projectName: row.nombre_proyecto });
+                    }
+                    
+                    // Verificar si existe en la BD
+                    const existingInDB = existingOTsInDB[otCodeLower];
+                    if (existingInDB && existingInDB.length > 0) {
+                        const existing = existingInDB[0];
+                        if (row.status && row.status !== existing.status) {
+                            // OT existe pero estado diferente → actualizar
+                            row.action = 'update';
+                            row.oldStatus = existing.status;
+                            toUpdate.push(row);
+                        } else {
+                            // OT existe con todo igual → omitir
+                            row.action = 'skip';
+                            toSkip.push(row);
+                        }
+                    } else {
+                        // OT no existe → crear
+                        row.action = 'create';
+                        toCreate.push(row);
+                    }
+                    
+                    // Inicializar createNewProject por defecto según checkbox global
+                    const globalCheckbox = document.getElementById('ot-create-projects-checkbox');
+                    row.createNewProject = globalCheckbox ? globalCheckbox.checked : true;
+                });
+
+                // Mostrar alertas de duplicados en archivo
+                const duplicateOTs = Object.keys(duplicatesInFile).filter(code => duplicatesInFile[code].length > 1);
+                if (duplicateOTs.length > 0 && otDuplicatesAlert && otDuplicatesList) {
+                    let html = '<ul style="margin:0;padding-left:20px;">';
+                    duplicateOTs.forEach(code => {
+                        const occurrences = duplicatesInFile[code];
+                        const projects = occurrences.map(o => o.projectName || 'Sin proyecto').join(', ');
+                        html += `<li><strong>${code.toUpperCase()}</strong> aparece ${occurrences.length} veces con proyectos: ${projects}</li>`;
                     });
+                    html += '</ul><p style="margin-top:8px;color:#856404;">Se creará 1 OT y se vinculará a todos los proyectos listados.</p>';
+                    otDuplicatesList.innerHTML = html;
+                    otDuplicatesAlert.style.display = 'block';
+                } else if (otDuplicatesAlert) {
+                    otDuplicatesAlert.style.display = 'none';
                 }
+
+                // Mostrar alertas de OTs a omitir
+                if (toSkip.length > 0 && otSkippedAlert && otSkippedList) {
+                    let html = '<ul style="margin:0;padding-left:20px;">';
+                    toSkip.forEach(ot => {
+                        html += `<li><strong>${ot.ot_code}</strong> - ${ot.nombre_proyecto || 'Sin proyecto'} (ya existe con las mismas propiedades)</li>`;
+                    });
+                    html += '</ul>';
+                    otSkippedList.innerHTML = html;
+                    otSkippedAlert.style.display = 'block';
+                } else if (otSkippedAlert) {
+                    otSkippedAlert.style.display = 'none';
+                }
+
+                // Mostrar alertas de OTs a actualizar
+                if (toUpdate.length > 0 && otUpdatedAlert && otUpdatedList) {
+                    let html = '<ul style="margin:0;padding-left:20px;">';
+                    toUpdate.forEach(ot => {
+                        html += `<li><strong>${ot.ot_code}</strong> - Estado cambiará de "${ot.oldStatus}" a "${ot.status}"</li>`;
+                    });
+                    html += '</ul>';
+                    otUpdatedList.innerHTML = html;
+                    otUpdatedAlert.style.display = 'block';
+                } else if (otUpdatedAlert) {
+                    otUpdatedAlert.style.display = 'none';
+                }
+
+                // Filtrar solo las que se van a crear/actualizar para la tabla de previsualización
+                otImportPreviewRows = otImportPreviewRows.filter(row => row.action !== 'skip');
+                
+                renderOTImportPreview();
             };
             reader.readAsBinaryString(file);
         });
@@ -326,35 +479,111 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         
-        otImportPreviewArea.style.display = '';
-        otImportSaveBtn.style.display = '';
-        otImportCancelBtn.style.display = '';
+        otImportPreviewArea.style.display = 'block';
+        otImportSaveBtn.style.display = 'inline-block';
+        otImportCancelBtn.style.display = 'inline-block';
         
         otImportPreviewRows.forEach((row, idx) => {
             const tr = document.createElement('tr');
-            if (row.hasError) {
-                tr.style.backgroundColor = '#fee';
+            
+            // Determinar si debe crear nuevo proyecto o usar existente
+            const willCreateNew = row.createNewProject !== false && !row.selectedProjectId;
+            const hasExistingSelected = row.selectedProjectId ? true : false;
+            const noProjectAction = !willCreateNew && !hasExistingSelected;
+            
+            // Colorear según acción/estado
+            if (noProjectAction) {
+                // ROJO: Sin proyecto (requiere atención)
+                tr.style.backgroundColor = '#f8d7da';
+                tr.style.border = '2px solid #dc3545';
+            } else if (row.action === 'update') {
+                tr.style.backgroundColor = '#d1ecf1'; // Azul claro
+            } else if (row.action === 'create') {
+                tr.style.backgroundColor = '#d4edda'; // Verde claro
             }
             
-            // Generar opciones de proyectos para el combo
-            let projectOptions = '<option value="">-- Seleccionar proyecto --</option>';
-            availableProjects.forEach(p => {
-                const selected = row.project_id === p.id ? 'selected' : '';
-                projectOptions += `<option value="${p.id}" ${selected}>${p.name}</option>`;
-            });
+            // Badge de acción
+            let actionBadge = '';
+            if (row.action === 'create') {
+                actionBadge = '<span style="background:#28a745;color:white;padding:4px 8px;border-radius:4px;font-size:11px;">✨ CREAR</span>';
+            } else if (row.action === 'update') {
+                actionBadge = '<span style="background:#17a2b8;color:white;padding:4px 8px;border-radius:4px;font-size:11px;">🔵 ACTUALIZAR</span>';
+            }
+            
+            // Checkbox individual para crear proyecto
+            const isCreateChecked = row.createNewProject !== false;
+            const createCheckbox = `
+                <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer;">
+                    <input type="checkbox" 
+                        ${isCreateChecked ? 'checked' : ''} 
+                        onchange="window.toggleCreateProject(${idx}, this.checked)"
+                        style="cursor:pointer;">
+                    <span style="font-weight:bold;color:${isCreateChecked ? '#28a745' : '#6c757d'};">
+                        ${isCreateChecked ? '➕ Crear Nuevo' : '➕ Crear Nuevo'}
+                    </span>
+                </label>
+            `;
+            
+            // Dropdown de proyectos existentes (habilitado/deshabilitado según checkbox)
+            const projectOptions = availableProjects.map(p => 
+                `<option value="${p.id}" ${row.selectedProjectId == p.id ? 'selected' : ''}>${p.name || p.nombre_proyecto || 'Sin nombre'}</option>`
+            ).join('');
+            const isDropdownDisabled = isCreateChecked;
+            const projectDropdown = `
+                <select 
+                    id="project-select-${idx}"
+                    onchange="window.selectExistingProject(${idx}, this.value)" 
+                    ${isDropdownDisabled ? 'disabled' : ''}
+                    style="width:100%;padding:6px;border:1px solid ${isDropdownDisabled ? '#ccc' : '#007bff'};border-radius:4px;background:${isDropdownDisabled ? '#e9ecef' : 'white'};cursor:${isDropdownDisabled ? 'not-allowed' : 'pointer'};">
+                    <option value="">-- Seleccionar proyecto existente --</option>
+                    ${projectOptions}
+                </select>
+            `;
+            
+            // Combinar checkbox y dropdown en la misma celda
+            const projectControlCell = `
+                <div style="padding:4px;">
+                    ${createCheckbox}
+                    ${projectDropdown}
+                    ${noProjectAction ? '<small style="color:#dc3545;font-weight:bold;margin-top:4px;display:block;">⚠️ Seleccione una opción</small>' : ''}
+                </div>
+            `;
+            
+            // Select editable para Estado
+            const estadoSelect = `
+                <select onchange="window.updateOTImportCell(${idx}, 'status', this.value)"
+                    style="width:100%;padding:4px;border:1px solid #ccc;border-radius:4px;">
+                    <option value="Pendiente" ${row.status === 'Pendiente' ? 'selected' : ''}>Pendiente</option>
+                    <option value="En Progreso" ${row.status === 'En Progreso' ? 'selected' : ''}>En Progreso</option>
+                    <option value="Activo" ${row.status === 'Activo' ? 'selected' : ''}>Activo</option>
+                    <option value="Completado" ${row.status === 'Completado' ? 'selected' : ''}>Completado</option>
+                    <option value="Cerrado" ${row.status === 'Cerrado' ? 'selected' : ''}>Cerrado</option>
+                    <option value="Cancelado" ${row.status === 'Cancelado' ? 'selected' : ''}>Cancelado</option>
+                </select>
+            `;
+            
+            // Input editable para Tipo de Servicio
+            const tipoServicioInput = `
+                <input type="text" 
+                    value="${row.tipo_servicio || ''}"
+                    onchange="window.updateOTImportCell(${idx}, 'tipo_servicio', this.value)"
+                    placeholder="Tipo de servicio"
+                    style="width:100%;padding:4px;border:1px solid #ccc;border-radius:4px;">
+            `;
             
             tr.innerHTML = `
-                <td><input type="text" value="${row.ot_code || ''}" readonly style="background:#f5f5f5;"></td>
-                <td><input type="text" value="${row.folio_principal_santec || ''}" onchange="window.updateOTImportCell(${idx},'folio_principal_santec',this.value)"></td>
-                <td><input type="text" value="${row.folio_santec || ''}" onchange="window.updateOTImportCell(${idx},'folio_santec',this.value)"></td>
-                <td>
-                    ${row.hasError ? `<div style="color:#c00;font-size:12px;">⚠️ Proyecto no encontrado</div>` : ''}
-                    <select onchange="window.assignProjectToOT(${idx}, this.value)" style="width:100%;">
-                        ${projectOptions}
-                    </select>
-                    <div style="font-size:11px;color:#666;margin-top:4px;">Original: ${row.nombre_proyecto}</div>
+                <td style="padding:8px;"><strong>${row.ot_code || ''}</strong></td>
+                <td style="padding:8px;">${row.nombre_proyecto || '-'}</td>
+                <td style="padding:8px;">${projectControlCell}</td>
+                <td style="padding:8px;">${estadoSelect}</td>
+                <td style="padding:8px;">${tipoServicioInput}</td>
+                <td style="padding:8px;">${actionBadge}</td>
+                <td style="padding:8px;">
+                    <button type="button" onclick="window.deleteOTImportRow(${idx})" 
+                        style="background:#dc3545;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">
+                        🗑️
+                    </button>
                 </td>
-                <td><button type="button" onclick="window.deleteOTImportRow(${idx})" style="background:#dc3545;color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">🗑️ Eliminar</button></td>
             `;
             tbody.appendChild(tr);
         });
@@ -363,6 +592,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.updateOTImportCell = function(idx, field, value) {
         if (otImportPreviewRows[idx]) {
             otImportPreviewRows[idx][field] = value;
+        }
+    };
+
+    window.selectExistingProject = function(idx, projectId) {
+        if (otImportPreviewRows[idx]) {
+            otImportPreviewRows[idx].selectedProjectId = projectId ? parseInt(projectId) : null;
+            // Si selecciona un proyecto existente, desactivar "crear nuevo"
+            if (projectId) {
+                otImportPreviewRows[idx].createNewProject = false;
+            }
+            renderOTImportPreview();
+        }
+    };
+
+    window.toggleCreateProject = function(idx, checked) {
+        if (otImportPreviewRows[idx]) {
+            otImportPreviewRows[idx].createNewProject = checked;
+            // Si activa "crear nuevo", limpiar proyecto seleccionado
+            if (checked) {
+                otImportPreviewRows[idx].selectedProjectId = null;
+            }
+            renderOTImportPreview();
         }
     };
 
@@ -395,61 +646,113 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             
-            // Verificar que todas las filas tengan un proyecto asignado
-            const invalidRows = otImportPreviewRows.filter(r => !r.project_id);
-            if (invalidRows.length > 0) {
-                Swal.fire({ 
-                    icon: 'error', 
-                    title: 'Proyectos faltantes',
-                    text: `${invalidRows.length} OT(s) no tienen un proyecto asignado. Por favor, asigna un proyecto o elimina las filas antes de guardar.`
-                });
-                return;
-            }
+            const createProjectsGlobal = otCreateProjectsCheckbox ? otCreateProjectsCheckbox.checked : true;
             
-            // Guardar OTs usando el endpoint de importación masiva
+            // Contar cuántos tienen proyecto seleccionado vs crear nuevo
+            const withExistingProject = otImportPreviewRows.filter(r => r.selectedProjectId).length;
+            const willCreateNew = otImportPreviewRows.filter(r => !r.selectedProjectId && (r.createNewProject !== false)).length;
+            
+            // Mostrar confirmación
+            const result = await Swal.fire({
+                title: '¿Continuar con la importación?',
+                html: `
+                    <p>Se procesarán <strong>${otImportPreviewRows.length}</strong> registros:</p>
+                    <ul style="text-align:left;margin:auto;max-width:350px;">
+                        <li>✨ Crear OTs: ${otImportPreviewRows.filter(r => r.action === 'create').length}</li>
+                        <li>🔵 Actualizar OTs: ${otImportPreviewRows.filter(r => r.action === 'update').length}</li>
+                        <li>🔗 Vincular a proyecto existente: ${withExistingProject}</li>
+                        <li>➕ Crear proyectos nuevos: ${willCreateNew}</li>
+                    </ul>
+                `,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, importar',
+                cancelButtonText: 'Cancelar'
+            });
+            
+            if (!result.isConfirmed) return;
+            
+            // Mostrar loading
+            Swal.fire({
+                title: 'Importando...',
+                html: 'Por favor espera',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
             try {
+                // Preparar datos con información de proyecto individual
+                const ordersToSend = otImportPreviewRows.map(row => ({
+                    ...row,
+                    // Si tiene proyecto seleccionado, usarlo; si no, permitir crear según checkbox individual
+                    useExistingProject: row.selectedProjectId ? true : false,
+                    existingProjectId: row.selectedProjectId || null,
+                    createNewProject: row.selectedProjectId ? false : (row.createNewProject !== false)
+                }));
+                
                 const response = await fetch(
                     window.getApiUrl ? window.getApiUrl('/api/orders-of-work/import') : '/api/orders-of-work/import',
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ orders: otImportPreviewRows })
+                        body: JSON.stringify({ 
+                            orders: ordersToSend,
+                            createProjectsIfNotExist: createProjectsGlobal
+                        })
                     }
                 );
                 
-                const result = await response.json();
+                const data = await response.json();
                 
                 if (response.ok) {
-                    const successCount = result.results.success.length;
-                    const failCount = result.results.failed.length;
+                    const summary = data.summary || {};
+                    let html = `
+                        <div style="text-align:left;margin:auto;max-width:400px;">
+                            <p><strong>Resumen de importación:</strong></p>
+                            <ul>
+                                <li>✅ Creadas: ${summary.created || 0}</li>
+                                <li>🔗 Vinculadas: ${summary.linked || 0}</li>
+                                <li>🔵 Actualizadas: ${summary.updated || 0}</li>
+                                <li>⏭️ Omitidas: ${summary.skipped || 0}</li>
+                                <li>❌ Fallidas: ${summary.failed || 0}</li>
+                            </ul>
+                    `;
                     
-                    let message = `${successCount} OT(s) guardada(s) exitosamente`;
-                    if (failCount > 0) {
-                        message += `, ${failCount} fallida(s)`;
+                    if (data.results.duplicatesInFile && data.results.duplicatesInFile.length > 0) {
+                        html += `<p style="margin-top:12px;"><strong>⚠️ Duplicados procesados:</strong> ${data.results.duplicatesInFile.length}</p>`;
                     }
                     
-                    Swal.fire({ 
-                        icon: successCount > 0 ? 'success' : 'error',
-                        title: 'Importación completada', 
-                        text: message 
+                    html += '</div>';
+                    
+                    Swal.fire({
+                        icon: summary.failed > 0 ? 'warning' : 'success',
+                        title: 'Importación completada',
+                        html: html,
+                        width: '600px'
                     });
                     
-                    if (successCount > 0) {
-                        otImportPreviewRows = [];
-                        renderOTImportPreview();
-                        if (otImportFileStandalone) otImportFileStandalone.value = '';
+                    // Limpiar y recargar
+                    otImportPreviewRows = [];
+                    renderOTImportPreview();
+                    if (otImportFileStandalone) otImportFileStandalone.value = '';
+                    
+                    // Recargar lista de OTs
+                    if (typeof loadOrdersOfWork === 'function') {
+                        loadOrdersOfWork();
                     }
                 } else {
-                    Swal.fire({ 
-                        icon: 'error', 
-                        title: 'Error en la importación',
-                        text: result.error || 'No se pudieron guardar las OTs'
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error en importación',
+                        text: data.error || 'No se pudo completar la importación'
                     });
                 }
             } catch (err) {
                 console.error('Error saving orders:', err);
-                Swal.fire({ 
-                    icon: 'error', 
+                Swal.fire({
+                    icon: 'error',
                     title: 'Error de conexión',
                     text: 'No se pudo conectar con el servidor'
                 });
@@ -2959,7 +3262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Renderizar tabla de OTs
+    // Renderizar tabla de OTs (con relación M:N - una fila por cada OT × Proyecto)
     function renderOrdersOfWork() {
         const loading = document.getElementById('ot-grid-loading');
         const table = document.getElementById('ot-table');
@@ -2981,8 +3284,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         tbody.innerHTML = '';
         
+        // Agrupar por ot_code para detectar OTs con múltiples proyectos
+        const otGroups = {};
         filteredOrdersOfWork.forEach(ot => {
+            const code = ot.ot_code || '';
+            if (!otGroups[code]) {
+                otGroups[code] = [];
+            }
+            otGroups[code].push(ot);
+        });
+        
+        filteredOrdersOfWork.forEach((ot, index) => {
             const tr = document.createElement('tr');
+            
+            // Si la OT tiene múltiples proyectos, destacarla con borde azul
+            const multiProject = otGroups[ot.ot_code] && otGroups[ot.ot_code].length > 1;
+            if (multiProject) {
+                tr.style.borderLeft = '4px solid #007bff';
+                tr.style.backgroundColor = '#f0f8ff';
+            }
             
             // Formatear valores
             const formatCurrency = (val) => val ? `$${parseFloat(val).toLocaleString('es-MX', {minimumFractionDigits: 2})}` : '-';
@@ -2990,10 +3310,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             const formatPercent = (val) => val ? `${val}%` : '-';
             
             tr.innerHTML = `
-                <td>${ot.ot_code || '-'}</td>
+                <td>
+                    ${multiProject ? '<span style="color:#007bff;font-weight:bold;" title="OT vinculada a múltiples proyectos">🔗</span> ' : ''}
+                    ${ot.ot_code || '-'}
+                </td>
                 <td>${ot.folio_principal_santec || '-'}</td>
                 <td>${ot.folio_santec || '-'}</td>
-                <td>${ot.project_name || ot.nombre_proyecto || '-'}</td>
+                <td>
+                    <strong style="color:#007bff;">${ot.project_name || '-'}</strong>
+                    ${multiProject ? `<div style="font-size:11px;color:#666;">(${otGroups[ot.ot_code].length} proyectos en total)</div>` : ''}
+                </td>
                 <td><span class="badge badge-${getStatusClass(ot.status)}">${ot.status || 'Pendiente'}</span></td>
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ot.description || ''}">${ot.description || '-'}</td>
                 <td>${ot.tipo_servicio || '-'}</td>
@@ -3010,7 +3336,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>${formatPercent(ot.porcentaje_ejecucion)}</td>
                 <td>
                     <button onclick="viewOTDetails(${ot.id})" class="btn-icon" title="Ver detalles">👁️</button>
-                    <button onclick="deleteOT(${ot.id})" class="btn-icon" title="Eliminar">🗑️</button>
+                    <button onclick="deleteOT(${ot.id})" class="btn-icon" title="Eliminar OT">🗑️</button>
                 </td>
             `;
             

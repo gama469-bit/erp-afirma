@@ -94,18 +94,13 @@ app.post('/api/auth/login', async (req, res) => {
     
     console.log('🔐 Login attempt for:', email);
     
-    // For MVP: Simple authentication with hardcoded credentials
-    // TODO: Replace with proper user table and password hashing
-    const validUsers = [
-      { email: 'admin@afirma.com', password: 'admin123', role: 'admin', name: 'Administrador' },
-      { email: 'rh@afirma.com', password: 'rh123', role: 'rh', name: 'Recursos Humanos' }
-    ];
+    // SECURITY: Credentials removed from code. Use database authentication instead.
+    // Refer to server/api.js for proper authentication implementation with bcrypt.
+    // TODO: Implement database authentication or remove this file if not needed.
     
-    const user = validUsers.find(u => u.email === email && u.password === password);
-    
-    if (!user) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
+    return res.status(501).json({ 
+      error: 'Authentication not implemented in this server file. Use server/api.js instead.' 
+    });
     
     // Generate simple token (for MVP only - use JWT in production)
     const token = Buffer.from(`${email}:${Date.now()}`).toString('base64');
