@@ -6,7 +6,7 @@ const db = require('./db');
 async function runMigrations() {
   try {
     // Array de migraciones en orden correcto
-    const migrations = [
+     const migrations = [
       '001_create_employees.sql',
       '002_create_candidates.sql',
       '003_create_departments.sql',
@@ -32,9 +32,14 @@ async function runMigrations() {
       '021_fix_candidates_nullable.sql',
       '021_create_project_indexes.sql',
       '022_create_project_assignment_indexes.sql',
-      '023_add_recruitment_tracking.sql',
-      '024_create_job_openings.sql',
-      '025_add_cv_url_to_candidates.sql'
+      '023_create_authentication_tables.sql',
+      '024_create_orders_of_work.sql',
+      '025_add_orders_of_work_extended_fields.sql',
+      '026_add_rate_to_project_assignments.sql',
+      '027_remove_duplicate_entity_fk.sql',
+      '028_fix_entity_fk_to_mastercode.sql',
+      '029_create_project_ot_relations.sql',
+      '030_remove_duplicate_ot_columns.sql'
     ];
 
     for (const migration of migrations) {

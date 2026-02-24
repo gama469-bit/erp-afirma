@@ -1300,11 +1300,11 @@
                     <form id="candidate-form">
                         <input type="hidden" id="candidate-id">
                         <div style="display:flex;gap:10px">
-                            <input type="text" id="candidate-first" placeholder="Nombre" required>
-                            <input type="text" id="candidate-last" placeholder="Apellido" required>
+                            <input type="text" id="candidate-first" placeholder="Nombre (s)" pattern="[A-Za-zñÑáéíóúÁÉÍÓÚ\s]+" maxlength="50" title="Solo se permiten letras" required>
+                            <input type="text" id="candidate-last" placeholder="Apellidos" pattern="[A-Za-zñÑáéíóúÁÉÍÓÚ\s]+" maxlength="50" title="Solo se permiten letras" required>
                         </div>
                         <input type="text" id="candidate-email" placeholder="Email" required>
-                        <input type="text" id="candidate-phone" placeholder="Teléfono" required>
+                        <input type="text" id="candidate-phone" placeholder="Teléfono (10 dígitos)" pattern="[0-9]{10}" maxlength="10" title="Ingresa exactamente 10 dígitos" required>
                         <select id="candidate-position" required style="width:100%;padding:12px;margin-bottom:10px;border:1px solid #e6eef8;border-radius:8px;background:#fbfdff" required>
                             <option value="">Seleccionar posición solicitada...</option>
                         </select>
@@ -1476,7 +1476,7 @@
             <div id="employee-modal" class="modal" style="display:none">
                 <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
                     <div class="modal-header">
-                        <h3 id="modal-title">Agregar Empleado 23</h3>
+                        <h3 id="modal-title">Agregar Empleado</h3>
                         <button type="button" class="modal-close" id="modal-close">&times;</button>
                     </div>
                     
@@ -1500,18 +1500,18 @@
                                     <h4>Información Personal</h4>
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
-                                            <label for="employee-first" class="field-label">Nombre *</label>
-                                            <input type="text" id="employee-first" placeholder="Nombre" required>
+                                            <label for="employee-first" class="field-label">Nombre (s) *</label>
+                                            <input type="text" id="employee-first" placeholder="Nombre (s)" pattern="[A-Za-zñÑáéíóúÁÉÍÓÚ\s]+" maxlength="50" title="Solo se permiten letras" required>
                                         </div>
                                         <div style="flex:1">
-                                            <label for="employee-last" class="field-label">Apellido *</label>
-                                            <input type="text" id="employee-last" placeholder="Apellido" required>
+                                            <label for="employee-last" class="field-label">Apellidos *</label>
+                                            <input type="text" id="employee-last" placeholder="Apellidos" pattern="[A-Za-zñÑáéíóúÁÉÍÓÚ\s]+" maxlength="50" title="Solo se permiten letras" required>
                                         </div>
                                     </div>
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
                                             <label for="employee-code" class="field-label">Código empleado</label>
-                                            <input type="text" id="employee-code" placeholder="Código empleado (opcional)" disabled>
+                                            <input type="text" id="employee-code" placeholder="Código empleado (opcional)">
                                         </div>
                                         <div style="flex:1">
                                             <!-- Campo vacío para mantener el layout -->
@@ -1570,11 +1570,11 @@
                                     <div style="display:flex;gap:10px">
                                         <div style="flex:1">
                                             <label for="employee-phone" class="field-label">Teléfono corporativo</label>
-                                            <input type="text" id="employee-phone" placeholder="Teléfono corporativo (opcional)">
+                                            <input type="text" id="employee-phone" placeholder="Teléfono corporativo (10 dígitos)" pattern="[0-9]{10}" maxlength="10" title="Ingresa exactamente 10 dígitos">
                                         </div>
                                         <div style="flex:1">
                                             <label for="employee-personal-phone" class="field-label">Teléfono personal</label>
-                                            <input type="text" id="employee-personal-phone" placeholder="Teléfono personal (opcional)">
+                                            <input type="text" id="employee-personal-phone" placeholder="Teléfono personal (10 dígitos)" pattern="[0-9]{10}" maxlength="10" title="Ingresa exactamente 10 dígitos">
                                         </div>
                                     </div>
                                 </div>

@@ -1,10 +1,17 @@
-name: Deploy to Production
+name: Deploy to GCP Cloud Run
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, staging ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  SERVICE_NAME: erp-afirma
+  IMAGE: erp-afirma
 
 jobs:
   test:
@@ -25,10 +32,10 @@ jobs:
           - 5432:5432
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Setup Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: '18'
         cache: 'npm'
@@ -45,25 +52,71 @@ jobs:
         DB_USER: postgres
         DB_PASSWORD: postgres
     
-    - name: Run tests (when available)
+    - name: Run tests
       run: npm test
 
-  deploy-heroku:
+  build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Deploy to Heroku
-      uses: akhileshns/heroku-deploy@v3.12.12
+    - uses: actions/checkout@v4
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
       with:
-        heroku_api_key: ${{secrets.HEROKU_API_KEY}}
-        heroku_app_name: "tu-erp-afirma"
-        heroku_email: "tu-email@example.com"
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        workload_identity_provider: ${{ secrets.WI_PROVIDER }}
+        service_account: ${{ secrets.WI_SERVICE_ACCOUNT }}
+
+    - name: Configure Docker for GCP
+      run: gcloud auth configure-docker gcr.io
+
+    - name: Build Docker image
+      run: |
+        docker build -f Dockerfile.cloudrun \
+          -t gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }} \
+          -t gcr.io/$PROJECT_ID/$IMAGE:latest \
+          .
+
+    - name: Push Docker image
+      run: |
+        docker push gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }}
+        docker push gcr.io/$PROJECT_ID/$IMAGE:latest
+
+    - name: Deploy to Cloud Run
+      run: |
+        SERVICE=$SERVICE_NAME
+        if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+          SERVICE="${SERVICE_NAME}-staging"
+        fi
         
-    - name: Run migrations on Heroku
-      run: heroku run npm run migrate --app tu-erp-afirma
-      env:
-        HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
+        gcloud run deploy $SERVICE \
+          --image gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }} \
+          --platform managed \
+          --region $REGION \
+          --allow-unauthenticated \
+          --set-env-vars NODE_ENV=production,DB_HOST=/cloudsql/$PROJECT_ID:$REGION:erp-afirma-db,DB_NAME=BD_afirma,DB_USER=postgres \
+          --set-secrets DB_PASSWORD=db-password:latest \
+          --add-cloudsql-instances $PROJECT_ID:$REGION:erp-afirma-db \
+          --memory 512Mi \
+          --cpu 1 \
+          --max-instances 10 \
+          --timeout 300
+
+    - name: Verify deployment
+      run: |
+        SERVICE=$SERVICE_NAME
+        if [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+          SERVICE="${SERVICE_NAME}-staging"
+        fi
+        
+        URL=$(gcloud run services describe $SERVICE --region=$REGION --format='value(status.url)')
+        echo "✅ Deployed to: $URL"
+        sleep 5
+        curl -f $URL/api/health || echo "⚠️ Health check pending"

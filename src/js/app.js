@@ -1843,6 +1843,66 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.clearCandidateForm();
     }
 
+    // Real-time validation for candidate form inputs
+    const candidateFirstInput = document.getElementById('candidate-first');
+    const candidateLastInput = document.getElementById('candidate-last');
+    const candidatePhoneInput = document.getElementById('candidate-phone');
+
+    if (candidateFirstInput) {
+        candidateFirstInput.addEventListener('input', (e) => {
+            // Replace invalid characters in real-time
+            e.target.value = e.target.value.replace(/[^A-Za-zñÑáéíóúÁÉÍÓÚ\s]/g, '');
+        });
+    }
+
+    if (candidateLastInput) {
+        candidateLastInput.addEventListener('input', (e) => {
+            // Replace invalid characters in real-time
+            e.target.value = e.target.value.replace(/[^A-Za-zñÑáéíóúÁÉÍÓÚ\s]/g, '');
+        });
+    }
+
+    if (candidatePhoneInput) {
+        candidatePhoneInput.addEventListener('input', (e) => {
+            // Only allow numbers and limit to 10 digits
+            e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+        });
+    }
+
+    // Real-time validation for employee form inputs
+    const employeeFirstInput = document.getElementById('employee-first');
+    const employeeLastInput = document.getElementById('employee-last');
+    const employeePhoneInput = document.getElementById('employee-phone');
+    const employeePersonalPhoneInput = document.getElementById('employee-personal-phone');
+
+    if (employeeFirstInput) {
+        employeeFirstInput.addEventListener('input', (e) => {
+            // Replace invalid characters in real-time
+            e.target.value = e.target.value.replace(/[^A-Za-zñÑáéíóúÁÉÍÓÚ\s]/g, '');
+        });
+    }
+
+    if (employeeLastInput) {
+        employeeLastInput.addEventListener('input', (e) => {
+            // Replace invalid characters in real-time
+            e.target.value = e.target.value.replace(/[^A-Za-zñÑáéíóúÁÉÍÓÚ\s]/g, '');
+        });
+    }
+
+    if (employeePhoneInput) {
+        employeePhoneInput.addEventListener('input', (e) => {
+            // Only allow numbers and limit to 10 digits
+            e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+        });
+    }
+
+    if (employeePersonalPhoneInput) {
+        employeePersonalPhoneInput.addEventListener('input', (e) => {
+            // Only allow numbers and limit to 10 digits
+            e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+        });
+    }
+
     // navigation
     navLinks.forEach(a => {
         a.addEventListener('click', (e) => {
@@ -2016,6 +2076,45 @@ document.addEventListener('DOMContentLoaded', async () => {
         const endDate = document.getElementById('employee-end-date').value;
         const terminationReason = document.getElementById('employee-termination-reason').value;
         const rehireable = document.getElementById('employee-rehireable').checked;
+
+        // Validar que nombre y apellido solo contengan letras
+        const nameRegex = /^[A-Za-zñÑáéíóúÁÉÍÓÚ\s]+$/;
+        if (!nameRegex.test(first)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Nombre inválido',
+                text: 'El nombre solo puede contener letras'
+            });
+            return;
+        }
+        if (!nameRegex.test(last)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Apellido inválido',
+                text: 'El apellido solo puede contener letras'
+            });
+            return;
+        }
+
+        // Validar teléfono corporativo: exactamente 10 dígitos (si se proporciona)
+        if (phone && !/^[0-9]{10}$/.test(phone)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Teléfono corporativo inválido',
+                text: 'El teléfono debe contener exactamente 10 dígitos'
+            });
+            return;
+        }
+
+        // Validar teléfono personal: exactamente 10 dígitos (si se proporciona)
+        if (personalPhone && !/^[0-9]{10}$/.test(personalPhone)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Teléfono personal inválido',
+                text: 'El teléfono debe contener exactamente 10 dígitos'
+            });
+            return;
+        }
 
         const payload = {
             first_name: first,
@@ -2228,6 +2327,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         
         if (!first || !last || !position) return;
+
+        // Validar que nombre y apellido solo contengan letras
+        const nameRegex = /^[A-Za-zñÑáéíóúÁÉÍÓÚ\s]+$/;
+        if (!nameRegex.test(first)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Nombre inválido',
+                text: 'El nombre solo puede contener letras'
+            });
+            return;
+        }
+        if (!nameRegex.test(last)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Apellido inválido',
+                text: 'El apellido solo puede contener letras'
+            });
+            return;
+        }
+
+        // Validar teléfono: exactamente 10 dígitos
+        if (phone && !/^[0-9]{10}$/.test(phone)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Teléfono inválido',
+                text: 'El teléfono debe contener exactamente 10 dígitos'
+            });
+            return;
+        }
 
         // client-side email validation (if provided)
         if (email) {

@@ -22,7 +22,7 @@ html,body{height:100%;margin:0;font-family:'Segoe UI', Tahoma, Geneva, Verdana, 
 .hamburger-btn{background:none;border:none;font-size:24px;color:var(--brand-primary);cursor:pointer;padding:8px;border-radius:8px;transition:background 0.2s;display:flex;align-items:center;justify-content:center}
 .hamburger-btn:hover{background:var(--brand-light);transform:none}
 .hamburger-icon{display:inline-block;line-height:1}
-.topbar-logo{width:40px;height:40px;border-radius:8px;background:var(--brand-primary);display:flex;align-items:center;justify-content:center}
+.topbar-logo{width:40px;height:40px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center}
 .topbar-title{font-weight:700;color:var(--brand-primary);font-size:16px;letter-spacing:-0.5px}
 .topbar-right{display:flex;align-items:center;gap:12px}
 .user-pill{background:var(--brand-light);padding:8px 12px;border-radius:20px;color:var(--brand-primary);font-weight:600;font-size:13px}
