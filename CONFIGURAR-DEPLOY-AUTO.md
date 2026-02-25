@@ -75,7 +75,7 @@ notepad "$env:USERPROFILE\Desktop\gcp-keys\github-actions-key.json"
 
 ### 4.2 Ir a GitHub
 
-1. Abre: https://github.com/fredy-solis/erp-afirma/settings/secrets/actions
+1. Abre: https://github.com/gama469-bit/erp-afirma/settings/secrets/actions
 2. Click en **"New repository secret"**
 3. Name: `GCP_SA_KEY`
 4. Secret: **Pega todo el JSON que copiaste**
@@ -101,7 +101,7 @@ git push origin main
 
 ### Opción B: Trigger manual desde GitHub
 
-1. Ve a: https://github.com/fredy-solis/erp-afirma/actions
+1. Ve a: https://github.com/gama469-bit/erp-afirma/actions
 2. Click en **"Deploy to GCP Cloud Run"**
 3. Click en **"Run workflow"**
 4. Selecciona branch **"main"**
@@ -109,9 +109,9 @@ git push origin main
 
 ---
 
-## 📊 Verificar que funciona
+## 📊Verificar que funciona
 
-1. Ve a: https://github.com/fredy-solis/erp-afirma/actions
+1. Ve a: https://github.com/gama469-bit/erp-afirma/actions
 2. Deberías ver un workflow ejecutándose (círculo amarillo 🟡)
 3. Espera 3-5 minutos
 4. Si todo sale bien, verás un check verde ✅

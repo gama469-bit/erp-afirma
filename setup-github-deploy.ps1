@@ -118,7 +118,7 @@ Write-Host ""
 Write-Host "Paso 5/5: Configurar en GitHub" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "🔗 Abre este link:" -ForegroundColor Green
-Write-Host "   https://github.com/fredy-solis/erp-afirma/settings/secrets/actions" -ForegroundColor Cyan
+Write-Host "   https://github.com/gama469-bit/erp-afirma/settings/secrets/actions" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "📝 Sigue estos pasos:" -ForegroundColor Yellow
 Write-Host "   1. Click en 'New repository secret'" -ForegroundColor White
@@ -130,7 +130,7 @@ Write-Host ""
 # Preguntar si quiere abrir el navegador
 $openBrowser = Read-Host "¿Abrir GitHub en el navegador? (Y/n)"
 if ($openBrowser -ne "n" -and $openBrowser -ne "N") {
-    Start-Process "https://github.com/fredy-solis/erp-afirma/settings/secrets/actions"
+    Start-Process "https://github.com/gama469-bit/erp-afirma/settings/secrets/actions"
 }
 
 Write-Host ""
