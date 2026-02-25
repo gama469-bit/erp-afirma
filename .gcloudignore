@@ -1,0 +1,109 @@
+# This file specifies files that are *not* uploaded to Google Cloud
+# using gcloud. It follows the same syntax as .gitignore
+
+# Node modules
+node_modules/
+
+# Git files
+.git/
+.gitignore
+.github/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Documentation and markdown files
+*.md
+!README.md
+
+# Build configuration files (except the ones needed)
+cloudbuild-manual.yaml
+ecosystem.config.js
+
+# Test files
+test-*.js
+*-test.js
+*.test.js
+
+# Scripts y archivos temporales
+check-*.js
+create-*.js
+change-*.js
+setup-*.js
+fix-*.js
+distribute-*.js
+drop-*.js
+apply-*.js
+add-*.js
+diagnostico.js
+debug-*.js
+simple-*.js
+
+# SQL files
+*.sql
+!server/migrations/*.sql
+
+# Batch files
+*.bat
+*.ps1
+*.sh
+
+# Docker compose (solo para local)
+docker-compose.yml
+
+# Deploy scripts
+deploy-*.bat
+deploy-*.sh
+start-*.bat
+start-*.ps1
+stop/
+cleanup-*.ps1
+
+# Documentación extensa
+ANALISIS_*.md
+CONFIRMACION-*.md
+DEPLOYMENT.md
+DESPLIEGUE-*.md
+DOCUMENTACION*.md
+ESTADO-*.md
+FINAL_*.md
+GCP-*.md
+GOOGLE-*.md
+IMPLEMENTACION_*.md
+IMPLEMENTATION_*.md
+NORMALIZATION_*.md
+PLAN_*.md
+PROJECT_*.md
+QUICK_*.md
+REFERENCIA-*.md
+RESUMEN-*.md
+SCRIPTS-*.md
+SETUP_*.md
+TECNOLOGIAS.md
+MAYUSCULAS-README.md
+
+# Sample files
+*_ejemplo.*
+ejemplo*.txt
+
+# Logs
+*.log
+logs/
+health_*.txt
+health_*.json
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output files
+dist/
+build/
+coverage/
