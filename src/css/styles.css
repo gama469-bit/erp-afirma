@@ -100,13 +100,14 @@ button:active{transform:translateY(0)}
 /* Filtros */
 .filters-container{
   display:grid;
-  grid-template-columns:repeat(4, 1fr) auto auto;
+  grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
   gap:12px;
   margin-bottom:20px;
   padding:16px;
   background:#f8fafb;
   border-radius:8px;
   border:1px solid var(--border);
+  align-items:end;
 }
 
 .filter-input{
@@ -956,3 +957,73 @@ button:active{transform:translateY(0)}
     font-size: 11px;
   }
 }
+
+/* ============================================
+   MAYÚSCULAS GLOBALES
+   ============================================ */
+
+/* Convertir TODO el texto del sistema a mayúsculas */
+body,
+.card,
+.form-section,
+label,
+button,
+.btn,
+th,
+td,
+.nav a,
+.topbar-title,
+.brand-title,
+.user-pill,
+h1, h2, h3, h4, h5, h6,
+p, span, div,
+.swal2-title,
+.swal2-content,
+.swal2-confirm,
+.swal2-cancel {
+  text-transform: uppercase !important;
+}
+
+/* Inputs, textareas y selects en mayúsculas */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="tel"],
+input[type="date"],
+input[type="datetime-local"],
+textarea,
+select {
+  text-transform: uppercase !important;
+}
+
+/* EXCEPCIÓN: Emails en minúsculas */
+input[type="email"] {
+  text-transform: lowercase !important;
+}
+
+input[type="email"]::placeholder {
+  text-transform: lowercase !important;
+}
+
+/* Placeholders también en mayúsculas */
+input::placeholder,
+textarea::placeholder {
+  text-transform: uppercase !important;
+}
+
+/* Opciones de select en mayúsculas */
+option {
+  text-transform: uppercase !important;
+}
+
+/* Texto en tablas */
+.table th,
+.table td,
+table th,
+table td {
+  text-transform: uppercase !important;
+}
+
+/* NOTA: Los datos se guardan según el tipo de campo:
+   - Campos normales: MAYÚSCULAS (JavaScript)
+   - Emails: minúsculas (JavaScript) */
