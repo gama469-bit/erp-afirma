@@ -2753,11 +2753,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${proj.id}</td>
-                <td>${proj.name || ''}</td>
-                <td>${(proj.description || '').substring(0, 50)}${(proj.description || '').length > 50 ? '...' : ''}</td>
-                <td>${proj.start_date ? proj.start_date.split('T')[0] : ''}</td>
-                <td>${proj.end_date ? proj.end_date.split('T')[0] : ''}</td>
-                <td><span style="background:${proj.status === 'Completado' ? '#10b981' : proj.status === 'En Progreso' ? '#3b82f6' : proj.status === 'Planificación' ? '#f59e0b' : '#6b7280'};color:white;padding:4px 8px;border-radius:4px;font-size:12px">${proj.status || ''}</span></td>
+                <td>${proj.nombre_proyecto || proj.name || ''}</td>
+                <td>${proj.responsable_proyecto || ''}</td>
+                <td>${proj.ciudad || ''}</td>
+                <td>${proj.estado || ''}</td>
+                <td>${proj.pais || ''}</td>
+                <td>${proj.fecha_inicio || proj.start_date ? (proj.fecha_inicio || proj.start_date).split('T')[0] : ''}</td>
+                <td>${proj.fecha_fin || proj.end_date ? (proj.fecha_fin || proj.end_date).split('T')[0] : ''}</td>
+                <td><span style="background:${proj.estado_proyecto === 'Completado' || proj.status === 'Completado' ? '#10b981' : proj.estado_proyecto === 'En Progreso' || proj.status === 'En Progreso' ? '#3b82f6' : proj.estado_proyecto === 'Planificación' || proj.status === 'Planificación' ? '#f59e0b' : '#6b7280'};color:white;padding:4px 8px;border-radius:4px;font-size:12px">${proj.estado_proyecto || proj.status || ''}</span></td>
                 <td>
                     <button class="btn-action-view" data-id="${proj.id}" title="Ver detalles">👁️</button>
                     <button class="btn-action-edit" data-id="${proj.id}" style="margin-left:4px" title="Editar">✏️</button>
@@ -2834,16 +2837,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     function filterProjects() {
-        const status = (document.getElementById('filter-project-status')?.value || '').trim();
-        let filtered = allProjects;
-        if (status) filtered = filtered.filter(p => p.status === status);
+        const nameFilter = (document.getElementById('filter-project-name')?.value || '').trim().toLowerCase();
+        const responsibleFilter = (document.getElementById('filter-project-responsible')?.value || '').trim().toLowerCase();
+        const cityFilter = (document.getElementById('filter-project-city')?.value || '').trim().toLowerCase();
+        const statusFilter = (document.getElementById('filter-project-status')?.value || '').trim();
+        const startDateFilter = document.getElementById('filter-project-start-date')?.value || '';
+        const endDateFilter = document.getElementById('filter-project-end-date')?.value || '';
+
+        let filtered = allProjects.filter(p => {
+            // Filtro por nombre
+            if (nameFilter) {
+                const projectName = (p.nombre_proyecto || p.name || '').toLowerCase();
+                if (!projectName.includes(nameFilter)) return false;
+            }
+
+            // Filtro por responsable
+            if (responsibleFilter) {
+                const responsible = (p.responsable_proyecto || '').toLowerCase();
+                if (!responsible.includes(responsibleFilter)) return false;
+            }
+
+            // Filtro por ciudad
+            if (cityFilter) {
+                const city = (p.ciudad || '').toLowerCase();
+                if (!city.includes(cityFilter)) return false;
+            }
+
+            // Filtro por estado del proyecto
+            if (statusFilter) {
+                const projectStatus = p.estado_proyecto || p.status || '';
+                if (projectStatus !== statusFilter) return false;
+            }
+
+            // Filtro por fecha de inicio (mayor o igual)
+            if (startDateFilter) {
+                const projectStartDate = (p.fecha_inicio || p.start_date || '').split('T')[0];
+                if (projectStartDate < startDateFilter) return false;
+            }
+
+            // Filtro por fecha de fin (menor o igual)
+            if (endDateFilter) {
+                const projectEndDate = (p.fecha_fin || p.end_date || '').split('T')[0];
+                if (projectEndDate > endDateFilter) return false;
+            }
+
+            return true;
+        });
+
         renderProjects(filtered);
     }
 
+    // Event listeners para filtros
+    document.getElementById('filter-project-name')?.addEventListener('input', filterProjects);
+    document.getElementById('filter-project-responsible')?.addEventListener('input', filterProjects);
+    document.getElementById('filter-project-city')?.addEventListener('input', filterProjects);
     document.getElementById('filter-project-status')?.addEventListener('change', filterProjects);
+    document.getElementById('filter-project-start-date')?.addEventListener('change', filterProjects);
+    document.getElementById('filter-project-end-date')?.addEventListener('change', filterProjects);
     document.getElementById('filter-project-search-btn')?.addEventListener('click', filterProjects);
     document.getElementById('filter-project-clear-btn')?.addEventListener('click', () => {
+        document.getElementById('filter-project-name').value = '';
+        document.getElementById('filter-project-responsible').value = '';
+        document.getElementById('filter-project-city').value = '';
         document.getElementById('filter-project-status').value = '';
+        document.getElementById('filter-project-start-date').value = '';
+        document.getElementById('filter-project-end-date').value = '';
         renderProjects(allProjects);
     });
 
