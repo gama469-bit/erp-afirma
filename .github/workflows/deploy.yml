@@ -31,18 +31,35 @@ jobs:
 
     - name: Build Docker image
       run: |
+        set -e
+        echo "🔨 Building Docker image..."
         docker build -f Dockerfile.cloudrun \
           -t gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }} \
           -t gcr.io/$PROJECT_ID/$IMAGE:latest \
           .
+        echo "✅ Docker image built successfully"
 
     - name: Push Docker image
       run: |
+        set -e
+        echo "📤 Pushing Docker image to GCR..."
         docker push gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }}
         docker push gcr.io/$PROJECT_ID/$IMAGE:latest
+        echo "✅ Docker images pushed successfully"
+
+    - name: Verify image in GCR
+      run: |
+        echo "🔍 Verifying image exists in GCR..."
+        gcloud container images describe gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }} || {
+          echo "❌ Image not found in GCR, deployment will fail"
+          exit 1
+        }
+        echo "✅ Image verified in GCR"
 
     - name: Deploy to Cloud Run
       run: |
+        set -e
+        echo "🚀 Deploying to Cloud Run..."
         gcloud run deploy $SERVICE_NAME \
           --image gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }} \
           --platform managed \
@@ -54,6 +71,7 @@ jobs:
           --max-instances 10 \
           --min-instances 0 \
           --timeout 300
+        echo "✅ Deployment command completed"
 
     - name: Verify deployment
       run: |

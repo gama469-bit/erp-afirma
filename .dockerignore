@@ -1,0 +1,71 @@
+# Archivos de Git
+.git
+.gitignore
+.github
+
+# Node modules (se instalarán en el build)
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Archivos de entorno
+.env
+.env.local
+.env.*.local
+*.env
+
+# Documentación y archivos de desarrollo
+*.md
+!README.md
+docs/
+.vscode/
+.idea/
+
+# Archivos de prueba
+test/
+tests/
+*.test.js
+*.spec.js
+test-*.js
+check-*.js
+diagnostico.js
+
+# Archivos de despliegue local
+start-*.ps1
+start-*.bat
+stop-*.ps1
+deploy-*.bat
+deploy-*.sh
+setup-*.bat
+inicio*.bat
+docker-compose.yml
+Dockerfile
+docker-run*.bat
+docker-run*.sh
+
+# Scripts de limpieza
+cleanup-*.ps1
+
+# Archivos temporales
+*.log
+*.tmp
+*.temp
+uploads/
+*.sql.backup
+health_*.txt
+health_*.json
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PM2
+ecosystem.config.js
+.pm2
+
+# Archivos de Cloud Build
+cloudbuild*.yaml
+service.yaml
+app.yaml
+Procfile
