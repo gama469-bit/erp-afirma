@@ -59,13 +59,14 @@ jobs:
     - name: Deploy to Cloud Run
       run: |
         set -e
-        echo "🚀 Deploying to Cloud Run..."
+        echo "🚀 Deploying to Cloud Run with Cloud SQL Proxy..."
         gcloud run deploy $SERVICE_NAME \
           --image gcr.io/$PROJECT_ID/$IMAGE:${{ github.sha }} \
           --platform managed \
           --region $REGION \
           --allow-unauthenticated \
-          --set-env-vars NODE_ENV=production,DB_HOST=34.27.67.249,DB_NAME=BD_afirma,DB_USER=postgres,DB_PASSWORD=afirma2025,DB_PORT=5432 \
+          --add-cloudsql-instances $PROJECT_ID:$REGION:erp-afirma-db \
+          --set-env-vars NODE_ENV=production,DB_HOST=/cloudsql/$PROJECT_ID:$REGION:erp-afirma-db,DB_NAME=BD_afirma,DB_USER=postgres,DB_PASSWORD=afirma2025,DB_PORT=5432 \
           --memory 512Mi \
           --cpu 1 \
           --max-instances 10 \
@@ -80,6 +81,13 @@ jobs:
         echo "deployment_url=$URL" >> $GITHUB_OUTPUT
         sleep 10
         curl -f $URL/api/health || echo "⚠️ Health check failed"
+
+    - name: Run Database Migrations
+      run: |
+        echo "🔄 Running database migrations..."
+        npm install pg
+        node run-migrations-ci.js
+        echo "✅ Migrations completed"
 
     - name: Deployment Summary
       run: |
