@@ -139,8 +139,13 @@ function openAssignmentModal() {
     const alert = document.getElementById('assignment-conflict-alert');
     if (alert) alert.style.display = 'none';
     
+    // Cargar OTs y proyectos
+    loadAvailableOTs();
     loadProjectsDropdown();
     loadAvailableEmployees();
+    
+    // Configurar auto-selección de OT → Proyecto
+    setupOTProjectAutoSelection();
     
     modal.style.display = 'flex';
     console.log('✅ Modal abierto');
@@ -214,6 +219,67 @@ async function loadProjectsDropdown() {
     }
 }
 
+// Cargar OTs disponibles
+async function loadAvailableOTs() {
+    try {
+        const response = await fetch(window.getApiUrl('/api/orders-of-work'));
+        if (!response.ok) throw new Error('Error al cargar órdenes de trabajo');
+        
+        const ots = await response.json();
+        const select = document.getElementById('assignment-ot');
+        
+        if (select) {
+            // Populamos el dropdown con OTs, guardando project_id como data attribute
+            select.innerHTML = '<option value="">Sin OT (asignación directa a proyecto)</option>' +
+                ots.map(ot => {
+                    // Extraer project_id de la relación (si viene del backend)
+                    const projectInfo = ot.project_id ? `data-project-id="${ot.project_id}"` : '';
+                    return `<option value="${ot.id}" ${projectInfo}>${ot.ot_code} - ${ot.description || 'Sin descripción'}</option>`;
+                }).join('');
+        }
+    } catch (err) {
+        console.error('Error loading OTs:', err);
+    }
+}
+
+// Configurar auto-selección de Proyecto cuando se selecciona OT
+function setupOTProjectAutoSelection() {
+    const otSelect = document.getElementById('assignment-ot');
+    const projectSelect = document.getElementById('assignment-project');
+    const projectHint = document.getElementById('assignment-project-hint');
+    
+    if (!otSelect || !projectSelect) {
+        console.error('❌ No se encontraron elementos de OT o proyecto');
+        return;
+    }
+    
+    // Remover listeners anteriores
+    otSelect.onchange = null;
+    
+    otSelect.onchange = function() {
+        const selectedOption = this.options[this.selectedIndex];
+        const projectId = selectedOption.getAttribute('data-project-id');
+        
+        if (projectId && this.value) {
+            // OT seleccionada → auto-seleccionar proyecto y deshabilitar
+            projectSelect.value = projectId;
+            projectSelect.disabled = true;
+            projectSelect.style.opacity = '0.6';
+            if (projectHint) {
+                projectHint.style.display = 'block';
+                projectHint.textContent = '✓ Proyecto auto-seleccionado por la OT';
+            }
+        } else {
+            // Sin OT → habilitar selección manual de proyecto
+            projectSelect.disabled = false;
+            projectSelect.style.opacity = '1';
+            if (projectHint) projectHint.style.display = 'none';
+        }
+    };
+    
+    console.log('✅ Auto-selección OT → Proyecto configurada');
+}
+
 // Cargar empleados disponibles (sin asignaciones activas)
 async function loadAvailableEmployees() {
     try {
@@ -240,6 +306,7 @@ async function saveAssignment(event) {
     event.preventDefault();
     
     const assignmentId = document.getElementById('assignment-id')?.value;
+    const otId = document.getElementById('assignment-ot')?.value;
     const projectId = document.getElementById('assignment-project')?.value;
     const employeeId = document.getElementById('assignment-employee')?.value;
     const role = document.getElementById('assignment-role')?.value;
@@ -259,12 +326,15 @@ async function saveAssignment(event) {
     
     const assignmentData = {
         employee_id: parseInt(employeeId),
+        ot_id: otId ? parseInt(otId) : null,
         role: role || null,
         start_date: startDate,
         end_date: endDate || null,
         hours_allocated: hours ? parseFloat(hours) : null,
         rate: rate ? parseFloat(rate) : 0
     };
+    
+    console.log('💾 Guardando asignación:', assignmentData);
     
     try {
         const url = window.getApiUrl(`/api/projects/${projectId}/assignments`);
@@ -682,7 +752,9 @@ async function loadEmployeeAssignments(employeeId) {
             if (tbodyEl) {
                 tbodyEl.innerHTML = assignments.map(a => `
                     <tr>
+                        <td>${a.ot_code ? `<strong>${a.ot_code}</strong><br><small style="color:#6b7280">${a.ot_description || ''}</small>` : '<span style="color:#999">Sin OT</span>'}</td>
                         <td>${a.project_name || '-'}</td>
+                        <td>${a.celula_name || '-'}</td>
                         <td>${a.role || '-'}</td>
                         <td>${a.start_date ? new Date(a.start_date).toLocaleDateString('es-MX') : '-'}</td>
                         <td>${a.end_date ? new Date(a.end_date).toLocaleDateString('es-MX') : 'Indefinida'}</td>

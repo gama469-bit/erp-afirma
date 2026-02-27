@@ -1562,6 +1562,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
             }
 
+            // Populate project celula selector
+            const projectCelulaSelect = document.getElementById('project-celula');
+            if (projectCelulaSelect) {
+                projectCelulaSelect.innerHTML = '<option value="">-- Seleccione una célula --</option>';
+                cells.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.item || c.name; // mastercode usa 'item' como nombre
+                    projectCelulaSelect.appendChild(opt);
+                });
+                console.log(`✅ ${cells.length} células cargadas en selector de proyecto`);
+            }
+
+            // Populate project celula filter
+            const filterProjectCelula = document.getElementById('filter-project-celula');
+            if (filterProjectCelula) {
+                filterProjectCelula.innerHTML = '<option value="">🏢 Todas las células</option>';
+                cells.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.item || c.name; // mastercode usa 'item' como nombre
+                    filterProjectCelula.appendChild(opt);
+                });
+                console.log(`✅ ${cells.length} células cargadas en filtro`);
+            }
+
             console.log('✅ All dropdowns populated successfully');
         } catch (e) {
             console.error('❌ Error loading catalog dropdowns:', e);
@@ -1579,14 +1605,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (id === 'ordenes-trabajo') {
             window.loadOrdersOfWork();
         }
+        // Cargar células cuando se accede a la vista
+        if (id === 'celulas') {
+            if (typeof window.loadCelulas === 'function') {
+                window.loadCelulas();
+            }
+        }
+        // Cargar licitaciones cuando se accede a la vista
+        if (id === 'licitaciones') {
+            if (typeof window.loadLicitaciones === 'function') {
+                window.loadLicitaciones();
+            }
+        }
     }
 
     // Hacer showView global para HTML inline onclick
     window.showView = showView;
 
-    async function openModal(isEdit = false){
-        console.log('🔓 Abriendo modal, isEdit:', isEdit);
-        document.getElementById('modal-title').textContent = isEdit ? 'Actualizar Empleado' : 'Agregar Empleado';
+    async function openModal(isEdit = false, isReadOnly = false){
+        console.log('🔓 Abriendo modal, isEdit:', isEdit, 'isReadOnly:', isReadOnly);
+        
+        // Configurar título según modo
+        const titleMap = {
+            readOnly: 'Ver Información del Empleado',
+            edit: 'Actualizar Empleado',
+            new: 'Agregar Empleado'
+        };
+        const mode = isReadOnly ? 'readOnly' : (isEdit ? 'edit' : 'new');
+        document.getElementById('modal-title').textContent = titleMap[mode];
+        
         modal.style.display = 'flex';
         if (!isEdit) {
             window.clearInputFields();
@@ -1594,6 +1641,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Always reload catalogs to ensure they're up to date
         await loadCatalogDropdowns();
+        
+        // Deshabilitar campos si es modo solo lectura
+        if (isReadOnly) {
+            const form = document.getElementById('employee-form');
+            const inputs = form.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+                input.disabled = true;
+                input.style.opacity = '0.7';
+            });
+            
+            // Ocultar botón de guardar
+            const saveBtn = document.getElementById('save-employee-btn');
+            if (saveBtn) saveBtn.style.display = 'none';
+        } else {
+            // Habilitar campos en modo edición/creación
+            const form = document.getElementById('employee-form');
+            const inputs = form.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+                input.disabled = false;
+                input.style.opacity = '1';
+            });
+            
+            // Mostrar botón de guardar
+            const saveBtn = document.getElementById('save-employee-btn');
+            if (saveBtn) saveBtn.style.display = 'inline-block';
+        }
         
         // Activar primera pestaña automáticamente con más tiempo para el modo editar
         const delay = isEdit ? 300 : 100;
@@ -1903,38 +1976,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // navigation
+    // navigation - Combinado en un solo listener para evitar duplicación
     navLinks.forEach(a => {
         a.addEventListener('click', (e) => {
             e.preventDefault();
             const view = a.dataset.view;
             showView(view);
-        });
-    });
-
-    // Cargar vacaciones al mostrar la vista
-    navLinks.forEach(a => {
-        a.addEventListener('click', (e) => {
-            const view = a.dataset.view;
+            
+            // Cargar datos específicos según la vista
             if (view === 'vacaciones') {
                 loadVacationEmployeeDropdown();
                 fetchVacations();
-            }
-            if (view === 'reclutamiento') {
+            } else if (view === 'reclutamiento') {
                 loadCandidatePositions();
-            }
-            if (view === 'proyectos') {
+            } else if (view === 'proyectos') {
                 fetchProjects();
-            }
-            if (view === 'asignaciones') {
+            } else if (view === 'celulas') {
+                if (typeof window.loadCelulas === 'function') {
+                    window.loadCelulas();
+                }
+            } else if (view === 'licitaciones') {
+                if (typeof window.loadLicitaciones === 'function') {
+                    window.loadLicitaciones();
+                }
+            } else if (view === 'asignaciones') {
                 if (typeof window.loadAssignments === 'function') {
                     window.loadAssignments();
                 }
                 if (typeof window.loadAssignmentFilters === 'function') {
                     window.loadAssignmentFilters();
                 }
-            }
-            if (view === 'reportes') {
+            } else if (view === 'reportes') {
                 if (typeof window.loadAllReports === 'function') {
                     window.loadAllReports();
                 }
@@ -2552,18 +2624,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // delegate edit/delete clicks for employees (supports table or legacy list)
+    // delegate edit/delete/view clicks for employees (supports table or legacy list)
     const employeeClicksHost = document.getElementById('employee-table-body') || document.getElementById('employee-list');
     if (employeeClicksHost) {
         employeeClicksHost.addEventListener('click', async (e)=>{
+            const view = e.target.closest('.view-employee');
             const edit = e.target.closest('.edit-employee');
             const del = e.target.closest('.delete-employee');
+            
+            if (view) {
+                const id = view.dataset.id;
+                const employees = await window.fetchEmployees();
+                const emp = employees.find(x=> String(x.id) === String(id));
+                if (emp) {
+                    await openModal(true, true); // Abre modal en modo solo lectura
+                    setTimeout(() => {
+                        window.populateForm(emp);
+                        // Cambiar a tab de asignaciones si existe historial
+                        const assignmentsTab = document.querySelector('.tab-button[data-tab="asignaciones"]');
+                        if (assignmentsTab) assignmentsTab.click();
+                    }, 200);
+                }
+                return;
+            }
+            
             if (edit) {
                 const id = edit.dataset.id;
                 const employees = await window.fetchEmployees();
                 const emp = employees.find(x=> String(x.id) === String(id));
                 if (emp) {
-                    if (!confirm('¿Estás seguro de que deseas editar este empleado?')) return;
                     await openModal(true); // Abre el modal y espera catálogos
                     // Espera a que los catálogos estén listos antes de poblar el formulario
                     setTimeout(() => {
@@ -2751,13 +2840,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         projectTable.style.display = 'table';
         projects.forEach(proj => {
             const tr = document.createElement('tr');
+            const montoTotal = proj.monto_total_ots ? `$${parseFloat(proj.monto_total_ots).toFixed(2)}` : '$0.00';
             tr.innerHTML = `
                 <td>${proj.id}</td>
                 <td>${proj.nombre_proyecto || proj.name || ''}</td>
-                <td>${proj.responsable_proyecto || ''}</td>
-                <td>${proj.ciudad || ''}</td>
-                <td>${proj.estado || ''}</td>
-                <td>${proj.pais || ''}</td>
+                <td>${proj.responsable_proyecto || proj.project_manager || ''}</td>
+                <td>${proj.celula_nombre || proj.celula_name || ''}</td>
+                <td style="font-weight:600;color:#059669;">${montoTotal}</td>
                 <td>${proj.fecha_inicio || proj.start_date ? (proj.fecha_inicio || proj.start_date).split('T')[0] : ''}</td>
                 <td>${proj.fecha_fin || proj.end_date ? (proj.fecha_fin || proj.end_date).split('T')[0] : ''}</td>
                 <td><span style="background:${proj.estado_proyecto === 'Completado' || proj.status === 'Completado' ? '#10b981' : proj.estado_proyecto === 'En Progreso' || proj.status === 'En Progreso' ? '#3b82f6' : proj.estado_proyecto === 'Planificación' || proj.status === 'Planificación' ? '#f59e0b' : '#6b7280'};color:white;padding:4px 8px;border-radius:4px;font-size:12px">${proj.estado_proyecto || proj.status || ''}</span></td>
@@ -2962,6 +3051,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('project-leader').value = project.project_leader || '';
             document.getElementById('cbt-responsible').value = project.cbt_responsible || '';
             document.getElementById('user-assigned').value = project.user_assigned || '';
+            document.getElementById('project-celula').value = project.celula_id || '';
+            document.getElementById('project-costo-asignado').value = project.costo_asignado || '';
             // Cargar OTs del backend
             await loadAndRenderOTs(project.id);
             console.log('✅ Project data loaded');
@@ -3067,17 +3158,264 @@ document.addEventListener('DOMContentLoaded', async () => {
         empty.style.display = 'none';
         ots.forEach((ot, idx) => {
             const tr = document.createElement('tr');
+            const costo = ot.costo_ot ? parseFloat(ot.costo_ot).toFixed(2) : '0.00';
             tr.innerHTML = `
                 <td style="padding:6px 8px;">${ot.ot_code || ''}</td>
                 <td style="padding:6px 8px;">${ot.description || ''}</td>
                 <td style="padding:6px 8px;">${ot.status || ''}</td>
                 <td style="padding:6px 8px;">${ot.start_date || ''}</td>
                 <td style="padding:6px 8px;">${ot.end_date || ''}</td>
+                <td style="padding:6px 8px;">$${costo}</td>
                 <td style="padding:6px 8px;"><button class="btn-action-delete" data-ot-id="${ot.id || ''}" data-ot-idx="${idx}" title="Eliminar OT">🗑️</button></td>
             `;
             tbody.appendChild(tr);
         });
         console.log('✅ OTs renderizadas correctamente');
+        
+        // Calcular y actualizar monto total
+        updateTotalMontoOTs(ots);
+    }
+
+    // Calcular y actualizar monto total de OTs
+    function updateTotalMontoOTs(ots) {
+        const total = ots.reduce((sum, ot) => sum + (parseFloat(ot.costo_ot) || 0), 0);
+        const montoTotalInput = document.getElementById('project-monto-total-ots');
+        if (montoTotalInput) {
+            montoTotalInput.value = `$${total.toFixed(2)}`;
+        }
+    }
+
+    // ================== FUNCIONALIDAD DE OTs EXISTENTES ==================
+    
+    // Variable global para almacenar todas las OTs disponibles
+    let allAvailableOTs = [];
+
+    // Cargar OTs existentes en el select
+    async function loadOTsIntoSelect() {
+        try {
+            const response = await fetch(window.getApiUrl ? window.getApiUrl('/api/orders-of-work') : '/api/orders-of-work');
+            allAvailableOTs = await response.json();
+            
+            const select = otRefs.existingSelect;
+            if (!select) return;
+            
+            // Limpiar opciones existentes (excepto la primera)
+            select.innerHTML = '<option value="">-- Seleccione una OT --</option>';
+            
+            // Agregar OTs existentes como opciones
+            allAvailableOTs.forEach(ot => {
+                const option = document.createElement('option');
+                option.value = ot.id;
+                option.textContent = `${ot.ot_code || ot.ot || 'Sin código'} - ${ot.description || ot.tipo_servicio || ot.perfil || 'Sin descripción'}`;
+                option.dataset.otData = JSON.stringify(ot);
+                select.appendChild(option);
+            });
+            
+            console.log(`✅ ${allAvailableOTs.length} OTs cargadas en el selector`);
+        } catch (err) {
+            console.error('Error al cargar OTs:', err);
+        }
+    }
+
+    // Referencias a elementos del toggle de OT (se inicializan en el modal)
+    let otRefs = {
+        modeExisting: null,
+        modeNew: null,
+        selectorExisting: null,
+        form: null,
+        existingSelect: null,
+        existingDetails: null,
+        addExistingBtn: null,
+        addNewBtn: null
+    };
+
+    // Función para inicializar referencias de OT cuando se abre el modal
+    function initOTReferences() {
+        otRefs.modeExisting = document.getElementById('ot-mode-existing');
+        otRefs.modeNew = document.getElementById('ot-mode-new');
+        otRefs.selectorExisting = document.getElementById('ot-selector-existing');
+        otRefs.form = document.getElementById('ot-form');
+        otRefs.existingSelect = document.getElementById('ot-existing-select');
+        otRefs.existingDetails = document.getElementById('ot-existing-details');
+        otRefs.addExistingBtn = document.getElementById('ot-add-existing-btn');
+        otRefs.addNewBtn = document.getElementById('ot-add-btn');
+
+        console.log('🔧 Referencias OT inicializadas:', {
+            modeExisting: !!otRefs.modeExisting,
+            modeNew: !!otRefs.modeNew,
+            selectorExisting: !!otRefs.selectorExisting,
+            form: !!otRefs.form,
+            existingSelect: !!otRefs.existingSelect,
+            existingDetails: !!otRefs.existingDetails,
+            addExistingBtn: !!otRefs.addExistingBtn,
+            addNewBtn: !!otRefs.addNewBtn
+        });
+
+        // Vincular event listeners a los radio buttons de modo
+        if (otRefs.modeExisting && !otRefs.modeExisting.hasAttribute('data-listener')) {
+            otRefs.modeExisting.addEventListener('change', () => {
+                if (otRefs.modeExisting.checked) {
+                    console.log('📢 Radio EXISTENTE seleccionado');
+                    setOTMode('existing');
+                }
+            });
+            otRefs.modeExisting.setAttribute('data-listener', 'true');
+        }
+
+        if (otRefs.modeNew && !otRefs.modeNew.hasAttribute('data-listener')) {
+            otRefs.modeNew.addEventListener('change', () => {
+                if (otRefs.modeNew.checked) {
+                    console.log('📢 Radio NUEVA seleccionado');
+                    setOTMode('new');
+                }
+            });
+            otRefs.modeNew.setAttribute('data-listener', 'true');
+        }
+
+        // Vincular change listener al select de OTs existentes
+        if (otRefs.existingSelect && !otRefs.existingSelect.hasAttribute('data-listener')) {
+            otRefs.existingSelect.addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                
+                if (this.value && selectedOption.dataset.otData) {
+                    const otData = JSON.parse(selectedOption.dataset.otData);
+                    
+                    // Mostrar detalles
+                    document.getElementById('detail-code').textContent = otData.ot_code || otData.ot || 'N/A';
+                    document.getElementById('detail-status').textContent = otData.status || 'N/A';
+                    document.getElementById('detail-description').textContent = otData.description || otData.tipo_servicio || otData.perfil || 'Sin descripción';
+                    
+                    if (otRefs.existingDetails) otRefs.existingDetails.style.display = 'block';
+                } else {
+                    if (otRefs.existingDetails) otRefs.existingDetails.style.display = 'none';
+                }
+            });
+            otRefs.existingSelect.setAttribute('data-listener', 'true');
+        }
+    }
+
+    function setOTMode(mode) {
+        // Asegurar que las referencias estén inicializadas
+        if (!otRefs.modeExisting || !otRefs.modeNew) {
+            console.warn('⚠️ Referencias no inicializadas, inicializando...');
+            initOTReferences();
+        }
+
+        console.log(`🔄 Cambiando a modo: ${mode}`);
+
+        if (mode === 'existing') {
+            // Activar modo "Seleccionar Existente"
+            if (otRefs.modeExisting) {
+                otRefs.modeExisting.checked = true;
+                const label = otRefs.modeExisting.closest('label');
+                if (label) {
+                    label.style.background = '#e6f2ff';
+                    label.style.borderColor = '#0066ff';
+                }
+            }
+            if (otRefs.modeNew) {
+                otRefs.modeNew.checked = false;
+                const label = otRefs.modeNew.closest('label');
+                if (label) {
+                    label.style.background = '#f8f9fa';
+                    label.style.borderColor = '#e6eef8';
+                }
+            }
+            if (otRefs.selectorExisting) {
+                otRefs.selectorExisting.style.display = 'block';
+                otRefs.selectorExisting.style.visibility = 'visible';
+                otRefs.selectorExisting.style.height = 'auto';
+                otRefs.selectorExisting.style.opacity = '1';
+                console.log('✅ Selector VISIBLE', otRefs.selectorExisting);
+            }
+            if (otRefs.form) {
+                // Ocultar formulario con múltiples propiedades
+                otRefs.form.style.display = 'none';
+                otRefs.form.style.visibility = 'hidden';
+                otRefs.form.style.height = '0';
+                otRefs.form.style.overflow = 'hidden';
+                otRefs.form.style.opacity = '0';
+                console.log('❌ Formulario OCULTO', otRefs.form);
+            }
+        } else {
+            // Activar modo "Crear Nueva"
+            if (otRefs.modeNew) {
+                otRefs.modeNew.checked = true;
+                const label = otRefs.modeNew.closest('label');
+                if (label) {
+                    label.style.background = '#e6f2ff';
+                    label.style.borderColor = '#0066ff';
+                }
+            }
+            if (otRefs.modeExisting) {
+                otRefs.modeExisting.checked = false;
+                const label = otRefs.modeExisting.closest('label');
+                if (label) {
+                    label.style.background = '#f8f9fa';
+                    label.style.borderColor = '#e6eef8';
+                }
+            }
+            if (otRefs.selectorExisting) {
+                otRefs.selectorExisting.style.display = 'none';
+                otRefs.selectorExisting.style.visibility = 'hidden';
+                otRefs.selectorExisting.style.height = '0';
+                otRefs.selectorExisting.style.opacity = '0';
+                console.log('❌ Selector OCULTO', otRefs.selectorExisting);
+            }
+            if (otRefs.form) {
+                // Mostrar formulario con todas sus propiedades
+                otRefs.form.style.display = 'flex';
+                otRefs.form.style.visibility = 'visible';
+                otRefs.form.style.height = 'auto';
+                otRefs.form.style.overflow = 'visible';
+                otRefs.form.style.opacity = '1';
+                otRefs.form.style.gap = '10px';
+                otRefs.form.style.alignItems = 'flex-end';
+                otRefs.form.style.marginBottom = '12px';
+                otRefs.form.style.flexWrap = 'wrap';
+                console.log('✅ Formulario VISIBLE', otRefs.form);
+            }
+        }
+    }
+
+    // Cconsole.log('🚀 Modal de proyecto abierto, inicializando OT...');
+        
+      //C  argar OTs existentes cuando se abre el modal de proyecto
+    const originalOpenProjectModal = openProjectModal;
+    openProjectModal = async function(isEdit = false, project = null, viewOnly = false) {
+        await originalOpenProjectModal(isEdit, project, viewOnly);
+        
+        // Inicializar referencias de OT
+        initOTReferences();
+        
+        // Cargar OTs existentes en el selector
+        await loadOTsIntoSelect();
+        
+        // Pequeño delay para asegurar que el DOM esté completamente renderizado
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Establecer modo por defecto (seleccionar existente) 
+        console.log('🎯 Estableciendo modo inicial: existing');
+        setOTMode('existing');
+    };
+
+    // ================== FIN FUNCIONALIDAD DE OTs EXISTENTES ==================
+
+    // Helper: Resetear campos del formulario OT (no es <form> sino <div>, no tiene .reset())
+    function resetOTForm() {
+        const otCode = document.getElementById('ot-code');
+        const otDesc = document.getElementById('ot-description');
+        const otStatus = document.getElementById('ot-status');
+        const otStart = document.getElementById('ot-start-date');
+        const otEnd = document.getElementById('ot-end-date');
+        const otCosto = document.getElementById('ot-costo');
+        
+        if (otCode) otCode.value = '';
+        if (otDesc) otDesc.value = '';
+        if (otStatus) otStatus.value = 'Pendiente';
+        if (otStart) otStart.value = '';
+        if (otEnd) otEnd.value = '';
+        if (otCosto) otCosto.value = '';
     }
 
     // Prevenir submit del formulario OT usando event delegation
@@ -3125,8 +3463,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const otStatus = otStatusEl?.value || 'Pendiente';
             const otStart = otStartEl?.value || '';
             const otEnd = otEndEl?.value || '';
+            const otCostoEl = document.getElementById('ot-costo');
+            const otCosto = otCostoEl?.value ? parseFloat(otCostoEl.value) : 0;
             
-            console.log('📝 Datos de OT:', { otCode, otDescription, otStatus, otStart, otEnd });
+            console.log('📝 Datos de OT:', { otCode, otDescription, otStatus, otStart, otEnd, otCosto });
             
             if (!otCode) {
                 Swal.fire({ icon: 'warning', title: 'Código OT requerido', text: 'Por favor ingresa un código para la OT' });
@@ -3146,7 +3486,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         description: otDescription,
                         status: otStatus,
                         start_date: otStart,
-                        end_date: otEnd
+                        end_date: otEnd,
+                        costo_ot: otCosto
                     })
                 });
                 if (res.ok) {
@@ -3156,29 +3497,137 @@ document.addEventListener('DOMContentLoaded', async () => {
                     window.currentProjectOTs.push(data);
                     console.log('📋 Total OTs:', window.currentProjectOTs.length);
                     renderOTList(window.currentProjectOTs);
-                    const otForm = document.getElementById('ot-form');
-                    if (otForm) otForm.reset();
+                    resetOTForm();
                     Swal.fire({ title: 'Agregando OT...', timer: 1000, showConfirmButton: false });
                 } else {
                     console.error('❌ Error al guardar OT:', res.status);
                     Swal.fire({ icon: 'error', title: 'Error al guardar OT' });
                 }
             } else {
-                // Proyecto nuevo: guardar en memoria
-                console.log('💾 Guardando OT en memoria (proyecto nuevo)...');
+                // Proyecto nuevo: guardar en memoria SIN id (OT nueva)
+                console.log('💾 Guardando OT NUEVA en memoria (proyecto nuevo)...');
                 if (!window.currentProjectOTs) window.currentProjectOTs = [];
-                window.currentProjectOTs.push({
+                const newOT = {
+                    // NO incluir id - esto marca que es una OT nueva
                     ot_code: otCode,
                     description: otDescription,
                     status: otStatus,
                     start_date: otStart,
+                    costo_ot: otCosto,
                     end_date: otEnd
-                });
+                };
+                console.log('✅ OT nueva a agregar (SIN id):', newOT);
+                window.currentProjectOTs.push(newOT);
                 console.log('✅ OT agregada a memoria:', window.currentProjectOTs);
                 console.log('📋 Total OTs:', window.currentProjectOTs.length);
                 renderOTList(window.currentProjectOTs);
-                document.getElementById('ot-form')?.reset();
+                resetOTForm();
                 Swal.fire({ title: 'Agregando OT...', timer: 1000, showConfirmButton: false });
+            }
+        }
+    });
+
+    // Agregar OT Existente - Usando event delegation a nivel documento
+    document.addEventListener('click', async function(e) {
+        // Verificar si el click fue en el botón de agregar OT existente
+        const target = e.target;
+        if (target.id === 'ot-add-existing-btn' || target.closest('#ot-add-existing-btn')) {
+            console.log('🔘 Click en Agregar OT Seleccionada (delegación documento)');
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const select = document.getElementById('ot-existing-select');
+            if (!select || !select.value) {
+                Swal.fire({ 
+                    icon: 'warning', 
+                    title: 'Seleccione una OT', 
+                    text: 'Por favor seleccione una OT de la lista antes de agregarla' 
+                });
+                return;
+            }
+
+            const selectedOption = select.options[select.selectedIndex];
+            const otData = JSON.parse(selectedOption.dataset.otData);
+            const projectId = document.getElementById('project-id')?.value || '';
+
+            console.log('📋 OT seleccionada:', otData);
+
+            // Verificar si la OT ya está en la lista
+            if (window.currentProjectOTs && window.currentProjectOTs.some(ot => ot.id === otData.id || ot.ot_code === otData.ot_code)) {
+                Swal.fire({ 
+                    icon: 'warning', 
+                    title: 'OT Duplicada', 
+                    text: 'Esta OT ya está agregada a este proyecto' 
+                });
+                return;
+            }
+
+            // Preparar datos de OT existente para agregar (con id obligatorio)
+            const otToAdd = {
+                id: otData.id, // ID obligatorio para OTs existentes
+                ot_code: otData.ot_code || otData.ot,
+                description: otData.description || otData.tipo_servicio || otData.perfil || '',
+                status: otData.status || 'Pendiente',
+                start_date: otData.start_date || otData.fecha_inicio || '',
+                end_date: otData.end_date || otData.fecha_fin || ''
+            };
+            
+            console.log('✅ OT existente a agregar (CON id):', otToAdd);
+
+            if (projectId) {
+                // Si el proyecto ya existe, crear relación en el backend usando endpoint correcto (M:N)
+                try {
+                    const res = await fetch(
+                        window.getApiUrl ? window.getApiUrl(`/api/projects/${projectId}/link-ot/${otData.id}`) : `/api/projects/${projectId}/link-ot/${otData.id}`,
+                        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+                    );
+                    
+                    if (res.ok) {
+                        if (!window.currentProjectOTs) window.currentProjectOTs = [];
+                        window.currentProjectOTs.push(otToAdd);
+                        renderOTList(window.currentProjectOTs);
+                        
+                        // Resetear selector
+                        select.value = '';
+                        const details = document.getElementById('ot-existing-details');
+                        if (details) details.style.display = 'none';
+                        
+                        Swal.fire({ 
+                            icon: 'success', 
+                            title: 'OT Agregada', 
+                            text: 'La OT existente ha sido vinculada al proyecto',
+                            timer: 1500,
+                            showConfirmButton: false
+                        });
+                    } else {
+                        throw new Error('Error al vincular OT');
+                    }
+                } catch (err) {
+                    console.error('Error al vincular OT:', err);
+                    Swal.fire({ 
+                        icon: 'error', 
+                        title: 'Error', 
+                        text: 'No se pudo vincular la OT al proyecto' 
+                    });
+                }
+            } else {
+                // Proyecto nuevo: agregar a memoria para guardar después
+                if (!window.currentProjectOTs) window.currentProjectOTs = [];
+                window.currentProjectOTs.push(otToAdd);
+                renderOTList(window.currentProjectOTs);
+                
+                // Resetear selector
+                select.value = '';
+                const details = document.getElementById('ot-existing-details');
+                if (details) details.style.display = 'none';
+                
+                Swal.fire({ 
+                    icon: 'success', 
+                    title: 'OT Agregada', 
+                    text: 'La OT será vinculada cuando guardes el proyecto',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
             }
         }
     });
@@ -3289,6 +3738,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const projectLeader = document.getElementById('project-leader').value;
         const cbtResponsible = document.getElementById('cbt-responsible').value;
         const userAssigned = document.getElementById('user-assigned').value;
+        const celulaId = document.getElementById('project-celula').value;
+        const costoAsignado = document.getElementById('project-costo-asignado').value;
 
         if (!name || !startDate) {
             Swal.fire({
@@ -3309,7 +3760,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 project_manager: projectManager || null,
                 project_leader: projectLeader || null,
                 cbt_responsible: cbtResponsible || null,
-                user_assigned: userAssigned || null
+                user_assigned: userAssigned || null,
+                celula_id: celulaId ? parseInt(celulaId) : null,
+                costo_asignado: costoAsignado ? parseFloat(costoAsignado) : null
             };
 
             const url = projectId 
@@ -3323,15 +3776,66 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const result = await response.json();
+            
             // Si es proyecto nuevo, guardar OTs en backend
             if (!projectId && window.currentProjectOTs && window.currentProjectOTs.length > 0) {
+                console.log('💾 Guardando OTs para proyecto nuevo...');
                 for (const ot of window.currentProjectOTs) {
-                    await fetch((window.getApiUrl ? window.getApiUrl(`/api/projects/${result.id}/orders-of-work`) : `/api/projects/${result.id}/orders-of-work`), {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(ot)
-                    });
+                    try {
+                        if (ot.id && typeof ot.id === 'number') {
+                            // OT existente: crear solo la relación M:N usando endpoint correcto
+                            console.log(`🔗 Vinculando OT existente ${ot.id} al proyecto ${result.id}`);
+                            const linkRes = await fetch(
+                                window.getApiUrl ? window.getApiUrl(`/api/projects/${result.id}/link-ot/${ot.id}`) : `/api/projects/${result.id}/link-ot/${ot.id}`,
+                                {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' }
+                                }
+                            );
+                            if (!linkRes.ok) {
+                                const errorText = await linkRes.text();
+                                console.error(`❌ Error al vincular OT ${ot.id}:`, errorText);
+                            } else {
+                                console.log(`✅ OT ${ot.id} vinculada correctamente`);
+                            }
+                        } else {
+                            // OT nueva: crear la OT y la relación
+                            console.log('➕ Creando nueva OT:', ot);
+                            const otPayload = {
+                                ot_code: ot.ot_code || ot.ot,
+                                description: ot.description,
+                                status: ot.status,
+                                start_date: ot.start_date,
+                                end_date: ot.end_date,
+                                costo_ot: ot.costo_ot || 0
+                            };
+                            console.log('📦 Payload OT a enviar:', otPayload);
+                            const createRes = await fetch(
+                                window.getApiUrl ? window.getApiUrl(`/api/projects/${result.id}/orders-of-work`) : `/api/projects/${result.id}/orders-of-work`,
+                                {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(otPayload)
+                                }
+                            );
+                            if (!createRes.ok) {
+                                const errorText = await createRes.text();
+                                console.error('❌ Error al crear OT:', errorText);
+                                try {
+                                    const errorJson = JSON.parse(errorText);
+                                    console.error('❌ Detalles del error:', errorJson);
+                                } catch (e) {
+                                    // No es JSON, ya lo mostramos como texto
+                                }
+                            } else {
+                                console.log('✅ OT creada correctamente');
+                            }
+                        }
+                    } catch (otError) {
+                        console.error('❌ Error procesando OT:', otError);
+                    }
                 }
+                console.log('✅ Todas las OTs procesadas');
             }
             if (projectId) {
                 Swal.fire({
@@ -3370,9 +3874,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         const isAnyCancel = !!e.target.closest('#employee-cancel, #project-cancel, #vacation-cancel, #assignment-cancel');
         const isAnyClose  = !!e.target.closest('.modal-close, #modal-close, #project-modal-close, #vacation-modal-close, #assignment-modal-close');
+        
+        // Excluir botones de OT que tienen sus propios listeners con event delegation
+        const isOTButton = !!e.target.closest('#ot-add-btn, #ot-add-existing-btn');
 
-
-        if (isInsideModal && isFormElement && !isAnyCancel && !isAnyClose) {
+        if (isInsideModal && isFormElement && !isAnyCancel && !isAnyClose && !isOTButton) {
             e.stopPropagation();
         }
     }, true); // Use capture phase

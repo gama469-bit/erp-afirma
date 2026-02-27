@@ -1,4 +1,9 @@
-require('dotenv').config();
+// Cargar configuración según ambiente
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({ path: '.env.development' });
+} else {
+  require('dotenv').config();
+}
 const express = require('express');
 const bodyParser = require('express').json;
 const db = require('./db');
@@ -1141,6 +1146,35 @@ app.delete('/api/mastercode/:lista/:id', async (req, res) => {
   }
 });
 
+// Get células with related projects, OTs, and employee count
+app.get('/api/celulas-with-relations', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        mc.id,
+        mc.item as name,
+        COUNT(DISTINCT p.id) as projects_count,
+        COUNT(DISTINCT ow.id) as ots_count,
+        COUNT(DISTINCT ev.id) as employees_count,
+        ARRAY_AGG(DISTINCT p.name) FILTER (WHERE p.name IS NOT NULL) as proyectos,
+        ARRAY_AGG(DISTINCT ow.ot_code) FILTER (WHERE ow.ot_code IS NOT NULL) as ots
+      FROM mastercode mc
+      LEFT JOIN projects p ON mc.id = p.celula_id
+      LEFT JOIN project_ot_relations por ON p.id = por.project_id
+      LEFT JOIN orders_of_work ow ON por.ot_id = ow.id
+      LEFT JOIN employees_v2 ev ON mc.id = ev.cell_id
+      WHERE mc.lista = 'Celulas'
+      GROUP BY mc.id, mc.item
+      ORDER BY mc.item
+    `);
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching celulas with relations:', err);
+    res.status(500).json({ error: 'Error fetching celulas with relations' });
+  }
+});
+
 // ==================== BACKWARD COMPATIBLE APIs ====================
 
 // Positions API (now uses mastercode)
@@ -2136,9 +2170,19 @@ app.get('/api/projects', async (req, res) => {
       `SELECT p.id, p.name, p.area_id, p.description, p.created_at, 
               p.start_date, p.end_date, p.status, p.manager_id,
               p.project_manager, p.project_leader, p.cbt_responsible, p.user_assigned,
-              mc.item as area_name
+              p.celula_id, p.costo_asignado,
+              mc.item as area_name,
+              mc_celula.item as celula_name,
+              COALESCE(SUM(ow.costo_ot), 0) as monto_total_ots
        FROM projects p
        LEFT JOIN mastercode mc ON p.area_id = mc.id AND mc.lista = 'Areas'
+       LEFT JOIN mastercode mc_celula ON p.celula_id = mc_celula.id AND mc_celula.lista = 'Celulas'
+       LEFT JOIN project_ot_relations por ON p.id = por.project_id
+       LEFT JOIN orders_of_work ow ON por.ot_id = ow.id
+       GROUP BY p.id, p.name, p.area_id, p.description, p.created_at, 
+                p.start_date, p.end_date, p.status, p.manager_id,
+                p.project_manager, p.project_leader, p.cbt_responsible, p.user_assigned,
+                p.celula_id, p.costo_asignado, mc.item, mc_celula.item
        ORDER BY p.created_at DESC`
     );
     res.json(result.rows);
@@ -2152,7 +2196,7 @@ app.get('/api/projects', async (req, res) => {
 app.get('/api/projects/assignments', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role_name as role, pa.start_date, pa.end_date, pa.allocation_percentage, pa.rate,
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.allocation_percentage, pa.rate,
               e.first_name, e.last_name, e.email, e.employee_code,
               p.name as project_name,
               mc_position.item as position,
@@ -2187,7 +2231,7 @@ app.get('/api/projects/:id/assignments', async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(
-      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role_name as role, pa.start_date, pa.end_date, pa.allocation_percentage, pa.rate,
+      `SELECT pa.id, pa.project_id, pa.employee_id, pa.role, pa.start_date, pa.end_date, pa.allocation_percentage, pa.rate,
               e.first_name, e.last_name, e.email, e.employee_code,
               mc_position.item as position,
               mc_area.item as area,
@@ -2219,15 +2263,16 @@ app.get('/api/projects/:id/assignments', async (req, res) => {
 });
 
 // Crear nueva OT para un proyecto
+// Crear nueva OT y vincularla a proyecto (M:N con project_ot_relations)
 app.post('/api/projects/:projectId/orders-of-work', async (req, res) => {
   const { projectId } = req.params;
   const { 
-    ot_code, description, status, start_date, end_date,
-    folio_principal_santec, folio_santec, nombre_proyecto,
+    ot_code, description, status, start_date, end_date, costo_ot,
+    folio_principal_santec, folio_santec,
     tipo_servicio, tecnologia, aplicativo,
     fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
     horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
-    autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+    autorizacion_rdp, proveedor,
     fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
     ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
     costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
@@ -2235,48 +2280,101 @@ app.post('/api/projects/:projectId/orders-of-work', async (req, res) => {
     fecha_vobo_front_negocio, horas, porcentaje_ejecucion
   } = req.body;
   
+  console.log('🔍 DEBUG - Creando OT, costo_ot recibido:', costo_ot, 'tipo:', typeof costo_ot);
+  
   if (!ot_code) {
     return res.status(400).json({ error: 'Campo ot_code requerido' });
   }
   
   try {
+    // 1. Crear la OT (sin project_id, nombre_proyecto, responsable_proyecto, cbt_responsable - eliminados en migración 030)
     const result = await db.query(
       `INSERT INTO orders_of_work (
-        project_id, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
+        ot_code, folio_principal_santec, folio_santec,
         status, description, tipo_servicio, tecnologia, aplicativo,
         fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
         horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
-        autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+        autorizacion_rdp, proveedor,
         fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
         ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
         costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
         clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
-        fecha_vobo_front_negocio, horas, porcentaje_ejecucion, start_date, end_date
+        fecha_vobo_front_negocio, horas, porcentaje_ejecucion, start_date, end_date, costo_ot
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, $22, $23, $24,
+        $25, $26, $27, $28, $29, $30, $31, $32,
+        $33, $34, $35, $36, $37, $38, $39, $40
       )
       RETURNING *`,
       [
-        projectId, ot_code, folio_principal_santec, folio_santec, nombre_proyecto,
+        ot_code, folio_principal_santec, folio_santec,
         status || 'Pendiente', description, tipo_servicio, tecnologia, aplicativo,
         fecha_inicio_santander, fecha_fin_santander, fecha_inicio_proveedor, fecha_fin_proveedor,
         horas_acordadas, semaforo_esfuerzo, semaforo_plazo, lider_delivery,
-        autorizacion_rdp, responsable_proyecto, cbt_responsable, proveedor,
+        autorizacion_rdp, proveedor,
         fecha_inicio_real, fecha_fin_real, fecha_entrega_proveedor, dias_desvio_entrega,
         ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
         costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
         clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
-        fecha_vobo_front_negocio, horas, porcentaje_ejecucion, start_date, end_date
+        fecha_vobo_front_negocio, horas, porcentaje_ejecucion, start_date, end_date, 
+        costo_ot !== undefined && costo_ot !== null ? costo_ot : 0
       ]
     );
-    res.status(201).json(result.rows[0]);
+
+    const newOT = result.rows[0];
+
+    // 2. Crear relación M:N en project_ot_relations
+    await db.query(
+      `INSERT INTO project_ot_relations (project_id, ot_id) VALUES ($1, $2)`,
+      [projectId, newOT.id]
+    );
+
+    res.status(201).json(newOT);
   } catch (err) {
     console.error('Error creating order of work:', err);
     res.status(500).json({ error: 'Error creating order of work', details: err.message });
+  }
+});
+
+// Vincular OT existente a proyecto (M:N)
+app.post('/api/projects/:projectId/link-ot/:otId', async (req, res) => {
+  const { projectId, otId } = req.params;
+  
+  try {
+    // Verificar que ambos existan
+    const projectCheck = await db.query('SELECT id FROM projects WHERE id = $1', [projectId]);
+    const otCheck = await db.query('SELECT id FROM orders_of_work WHERE id = $1', [otId]);
+    
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    if (otCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'OT no encontrada' });
+    }
+
+    // Verificar si ya existe la relación
+    const existing = await db.query(
+      'SELECT id FROM project_ot_relations WHERE project_id = $1 AND ot_id = $2',
+      [projectId, otId]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'La OT ya está vinculada a este proyecto' });
+    }
+
+    // Crear relación
+    await db.query(
+      'INSERT INTO project_ot_relations (project_id, ot_id) VALUES ($1, $2)',
+      [projectId, otId]
+    );
+
+    res.status(201).json({ message: 'OT vinculada exitosamente', project_id: projectId, ot_id: otId });
+  } catch (err) {
+    console.error('Error linking OT to project:', err);
+    res.status(500).json({ error: 'Error al vincular OT', details: err.message });
   }
 });
 
@@ -2529,6 +2627,7 @@ app.post('/api/orders-of-work/import', async (req, res) => {
         porcentaje_ejecucion,
         folio_principal_santec,
         folio_santec,
+        costo_ot, // Opcional - costo de la OT desde Excel
         // Datos del proyecto
         responsable_proyecto,
         cbt_responsable,
@@ -2607,13 +2706,13 @@ app.post('/api/orders-of-work/import', async (req, res) => {
                 ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
                 costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
                 clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
-                fecha_vobo_front_negocio, horas, porcentaje_ejecucion
+                fecha_vobo_front_negocio, horas, porcentaje_ejecucion, costo_ot
               )
               VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-                $31, $32, $33, $34, $35, $36, $37
+                $31, $32, $33, $34, $35, $36, $37, $38
               )
               RETURNING *
             `, [
@@ -2626,7 +2725,8 @@ app.post('/api/orders-of-work/import', async (req, res) => {
               ambiente, fecha_creacion, fts, estimacion_elab_pruebas,
               costo_hora_servicio_proveedor, monto_servicio_proveedor, monto_servicio_proveedor_iva,
               clase_coste, folio_pds, programa, front_negocio, vobo_front_negocio,
-              fecha_vobo_front_negocio, horas, porcentaje_ejecucion
+              fecha_vobo_front_negocio, horas, porcentaje_ejecucion, 
+              costo_ot || null // Opcional - puede venir o no desde Excel
             ]);
 
             otId = insertResult.rows[0].id;
@@ -2781,7 +2881,8 @@ app.get('/api/projects/:id', async (req, res) => {
 app.post('/api/projects', async (req, res) => {
   const { 
     name, description, area_id, start_date, end_date, status, manager_id,
-    project_manager, project_leader, cbt_responsible, user_assigned 
+    project_manager, project_leader, cbt_responsible, user_assigned,
+    celula_id, costo_asignado
   } = req.body;
   
   if (!name) {
@@ -2796,11 +2897,13 @@ app.post('/api/projects', async (req, res) => {
     const result = await db.query(
       `INSERT INTO projects (
         name, area_id, description, start_date, end_date, status, manager_id,
-        project_manager, project_leader, cbt_responsible, user_assigned
+        project_manager, project_leader, cbt_responsible, user_assigned,
+        celula_id, costo_asignado
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id, name, area_id, description, start_date, end_date, status, manager_id,
-                 project_manager, project_leader, cbt_responsible, user_assigned, created_at`,
+                 project_manager, project_leader, cbt_responsible, user_assigned,
+                 celula_id, costo_asignado, created_at`,
       [
         name, 
         area_id || null, 
@@ -2812,7 +2915,9 @@ app.post('/api/projects', async (req, res) => {
         project_manager || null,
         project_leader || null,
         cbt_responsible || null,
-        user_assigned || null
+        user_assigned || null,
+        celula_id || null,
+        costo_asignado || null
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -2827,7 +2932,8 @@ app.put('/api/projects/:id', async (req, res) => {
   const { id } = req.params;
   const { 
     name, description, area_id, start_date, end_date, status, manager_id,
-    project_manager, project_leader, cbt_responsible, user_assigned
+    project_manager, project_leader, cbt_responsible, user_assigned,
+    celula_id, costo_asignado
   } = req.body;
   
   try {
@@ -2843,10 +2949,13 @@ app.put('/api/projects/:id', async (req, res) => {
            project_manager = $8,
            project_leader = $9,
            cbt_responsible = $10,
-           user_assigned = $11
-       WHERE id = $12
+           user_assigned = $11,
+           celula_id = $12,
+           costo_asignado = $13
+       WHERE id = $14
        RETURNING id, name, area_id, description, start_date, end_date, status, manager_id,
-                 project_manager, project_leader, cbt_responsible, user_assigned, created_at`,
+                 project_manager, project_leader, cbt_responsible, user_assigned,
+                 celula_id, costo_asignado, created_at`,
       [
         name || null, 
         area_id || null, 
@@ -2859,6 +2968,8 @@ app.put('/api/projects/:id', async (req, res) => {
         project_leader || null,
         cbt_responsible || null,
         user_assigned || null,
+        celula_id || null,
+        costo_asignado || null,
         id
       ]
     );
@@ -2894,7 +3005,9 @@ app.delete('/api/projects/:id', async (req, res) => {
 // Add employee to project
 app.post('/api/projects/:id/assignments', async (req, res) => {
   const { id } = req.params;
-  const { employee_id, role, start_date, end_date, allocation_percentage, rate } = req.body;
+  const { employee_id, ot_id, role, start_date, end_date, allocation_percentage, rate } = req.body;
+  
+  console.log('🔍 Creating assignment:', { employee_id, project_id: id, ot_id, role });
   
   if (!employee_id) {
     return res.status(400).json({ error: 'Required field: employee_id' });
@@ -2928,10 +3041,10 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
     
     // Si no hay conflictos, proceder con la asignación
     const result = await db.query(
-      `INSERT INTO project_assignments (project_id, employee_id, role_name, start_date, end_date, allocation_percentage, rate)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, project_id, employee_id, role_name as role, start_date, end_date, allocation_percentage, rate, created_at`,
-      [id, employee_id, role || null, start_date || null, end_date || null, allocation_percentage || 100, rate || 0]
+      `INSERT INTO project_assignments (project_id, employee_id, ot_id, role, start_date, end_date, allocation_percentage, rate)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, project_id, employee_id, ot_id, role, start_date, end_date, allocation_percentage, rate, created_at`,
+      [id, employee_id, ot_id || null, role || null, start_date || null, end_date || null, allocation_percentage || 100, rate || 0]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -2943,19 +3056,20 @@ app.post('/api/projects/:id/assignments', async (req, res) => {
 // Update project assignment
 app.put('/api/projects/assignments/:assignmentId', async (req, res) => {
   const { assignmentId } = req.params;
-  const { role, start_date, end_date, allocation_percentage, rate } = req.body;
+  const { ot_id, role, start_date, end_date, allocation_percentage, rate } = req.body;
   
   try {
     const result = await db.query(
       `UPDATE project_assignments 
-       SET role_name = COALESCE($1, role_name),
-           start_date = COALESCE($2, start_date),
-           end_date = COALESCE($3, end_date),
-           allocation_percentage = COALESCE($4, allocation_percentage),
-           rate = COALESCE($5, rate)
-       WHERE id = $6
+       SET ot_id = COALESCE($1, ot_id),
+           role = COALESCE($2, role),
+           start_date = COALESCE($3, start_date),
+           end_date = COALESCE($4, end_date),
+           allocation_percentage = COALESCE($5, allocation_percentage),
+           rate = COALESCE($6, rate)
+       WHERE id = $7
        RETURNING *`,
-      [role, start_date, end_date, allocation_percentage, rate, assignmentId]
+      [ot_id, role, start_date, end_date, allocation_percentage, rate, assignmentId]
     );
     
     if (result.rowCount === 0) {
@@ -2994,12 +3108,17 @@ app.get('/api/employees/:id/assignments', async (req, res) => {
       `SELECT 
         pa.id,
         pa.project_id,
+        pa.ot_id,
         p.name as project_name,
         p.description as project_description,
-        pa.role_name as role_in_project,
+        ow.ot_code,
+        ow.description as ot_description,
+        mc_celula.item as celula_name,
+        pa.role as role_in_project,
         pa.start_date,
         pa.end_date,
         pa.allocation_percentage,
+        pa.rate,
         CASE 
           WHEN pa.end_date IS NULL OR pa.end_date >= CURRENT_DATE THEN true 
           ELSE false 
@@ -3007,6 +3126,8 @@ app.get('/api/employees/:id/assignments', async (req, res) => {
         pa.created_at
       FROM project_assignments pa
       INNER JOIN projects p ON pa.project_id = p.id
+      LEFT JOIN orders_of_work ow ON pa.ot_id = ow.id
+      LEFT JOIN mastercode mc_celula ON p.celula_id = mc_celula.id AND mc_celula.lista = 'Celulas'
       WHERE pa.employee_id = $1
       ORDER BY pa.start_date DESC`,
       [id]
@@ -3103,7 +3224,7 @@ app.get('/api/reports/resources-by-project', async (req, res) => {
             'employee_id', e.id,
             'employee_name', e.first_name || ' ' || e.last_name,
             'position', mc_position.item,
-            'role', pa.role_name,
+            'role', pa.role,
             'start_date', pa.start_date,
             'end_date', pa.end_date,
             'allocation_percentage', pa.allocation_percentage,
@@ -3155,7 +3276,7 @@ app.get('/api/reports/projects-by-resource', async (req, res) => {
           json_build_object(
             'project_id', p.id,
             'project_name', p.name,
-            'role', pa.role_name,
+            'role', pa.role,
             'start_date', pa.start_date,
             'end_date', pa.end_date,
             'allocation_percentage', pa.allocation_percentage,
@@ -3319,6 +3440,87 @@ app.post('/api/job-openings', async (req, res) => {
   }
 });
 
+// TEMPORAL: Debug endpoint para verificar costos de OTs
+app.get('/api/debug/ot-costs', async (req, res) => {
+  try {
+    // Ver proyectos recientes
+    const projects = await db.query(`SELECT id, name FROM projects ORDER BY id DESC LIMIT 5`);
+    
+    // Ver relaciones y costos
+    const relations = await db.query(`
+      SELECT por.project_id, por.ot_id, ow.ot_code, ow.costo_ot
+      FROM project_ot_relations por
+      LEFT JOIN orders_of_work ow ON por.ot_id = ow.id
+      ORDER BY por.project_id DESC
+      LIMIT 20
+    `);
+    
+    // Ver OTs recientes
+    const ots = await db.query(`
+      SELECT id, ot_code, costo_ot FROM orders_of_work ORDER BY id DESC LIMIT 10
+    `);
+    
+    res.json({
+      projects: projects.rows,
+      relations: relations.rows,
+      recent_ots: ots.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// TEMPORAL: Fix NULL costo_ot
+app.post('/api/debug/fix-null-costs', async (req, res) => {
+  try {
+    // Actualizar todos los NULL a 0
+    const result = await db.query(`
+      UPDATE orders_of_work 
+      SET costo_ot = 0 
+      WHERE costo_ot IS NULL
+    `);
+    
+    // Verificar el resultado
+    const stats = await db.query(`
+      SELECT COUNT(*) as total_ots, 
+             SUM(CASE WHEN costo_ot IS NULL THEN 1 ELSE 0 END) as nulls,
+             SUM(CASE WHEN costo_ot = 0 THEN 1 ELSE 0 END) as zeros,
+             SUM(CASE WHEN costo_ot > 0 THEN 1 ELSE 0 END) as with_cost
+      FROM orders_of_work
+    `);
+    
+    res.json({
+      updated: result.rowCount,
+      stats: stats.rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// TEMPORAL: Run migration 034
+app.post('/api/debug/run-migration-034', async (req, res) => {
+  try {
+    await db.query(`
+      ALTER TABLE project_assignments 
+      ADD COLUMN IF NOT EXISTS ot_id INTEGER REFERENCES orders_of_work(id) ON DELETE CASCADE
+    `);
+    
+    await db.query(`
+      ALTER TABLE project_assignments 
+      ADD COLUMN IF NOT EXISTS allocation_percentage NUMERIC(5,2) DEFAULT 100
+    `);
+    
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_project_assignments_ot_id ON project_assignments(ot_id)
+    `);
+    
+    res.json({ success: true, message: 'Migration 034 executed successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Update job opening
 app.put('/api/job-openings/:id', async (req, res) => {
   const { id } = req.params;
@@ -3388,6 +3590,156 @@ app.patch('/api/job-openings/:id', async (req, res) => {
   } catch (err) {
     console.error('Error deleting job opening:', err);
     res.status(500).json({ error: 'Error deleting job opening' });
+  }
+});
+
+// ============ LICITACIONES ENDPOINTS ============
+
+// Get all licitaciones
+app.get('/api/licitaciones', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        l.*,
+        mc.item as celula_name
+      FROM licitaciones l
+      LEFT JOIN mastercode mc ON l.celula_id = mc.id
+      ORDER BY l.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching licitaciones:', err);
+    res.status(500).json({ error: 'Error fetching licitaciones' });
+  }
+});
+
+// Get single licitacion
+app.get('/api/licitaciones/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT 
+        l.*,
+        mc.item as celula_name
+      FROM licitaciones l
+      LEFT JOIN mastercode mc ON l.celula_id = mc.id
+      WHERE l.id = $1
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Licitación no encontrada' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error fetching licitacion:', err);
+    res.status(500).json({ error: 'Error fetching licitacion' });
+  }
+});
+
+// Create licitacion
+app.post('/api/licitaciones', async (req, res) => {
+  const {
+    nombre,
+    nombre_proyecto,
+    clientes,
+    responsable_negocio,
+    celula_id,
+    estado
+  } = req.body;
+  
+  try {
+    const result = await db.query(`
+      INSERT INTO licitaciones (
+        nombre,
+        nombre_proyecto,
+        clientes,
+        responsable_negocio,
+        celula_id,
+        estado
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [
+      nombre,
+      nombre_proyecto,
+      clientes || null,
+      responsable_negocio || null,
+      celula_id || null,
+      estado || 'Solicitado'
+    ]);
+    
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error creating licitacion:', err);
+    res.status(500).json({ error: 'Error creating licitacion' });
+  }
+});
+
+// Update licitacion
+app.put('/api/licitaciones/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    nombre,
+    nombre_proyecto,
+    clientes,
+    responsable_negocio,
+    celula_id,
+    estado
+  } = req.body;
+  
+  try {
+    const result = await db.query(`
+      UPDATE licitaciones SET
+        nombre = COALESCE($1, nombre),
+        nombre_proyecto = COALESCE($2, nombre_proyecto),
+        clientes = COALESCE($3, clientes),
+        responsable_negocio = COALESCE($4, responsable_negocio),
+        celula_id = COALESCE($5, celula_id),
+        estado = COALESCE($6, estado),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7
+      RETURNING *
+    `, [nombre, nombre_proyecto, clientes, responsable_negocio, celula_id, estado, id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Licitación no encontrada' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating licitacion:', err);
+    res.status(500).json({ error: 'Error updating licitacion' });
+  }
+});
+
+// Delete licitacion
+app.delete('/api/licitaciones/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.query('DELETE FROM licitaciones WHERE id = $1 RETURNING *', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Licitación no encontrada' });
+    }
+    
+    res.json({ message: 'Licitación eliminada', licitacion: result.rows[0] });
+  } catch (err) {
+    console.error('Error deleting licitacion:', err);
+    res.status(500).json({ error: 'Error deleting licitacion' });
+  }
+});
+
+// ============ CÉLULAS HELPERS ============
+
+// Unassign projects from celula (set celula_id to NULL)
+app.post('/api/celulas/:id/unassign-projects', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('UPDATE projects SET celula_id = NULL WHERE celula_id = $1', [id]);
+    res.json({ message: 'Proyectos desasignados de la célula' });
+  } catch (err) {
+    console.error('Error unassigning projects:', err);
+    res.status(500).json({ error: 'Error unassigning projects' });
   }
 });
 

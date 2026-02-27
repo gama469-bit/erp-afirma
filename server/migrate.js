@@ -39,7 +39,12 @@ async function runMigrations() {
       '027_remove_duplicate_entity_fk.sql',
       '028_fix_entity_fk_to_mastercode.sql',
       '029_create_project_ot_relations.sql',
-      '030_remove_duplicate_ot_columns.sql'
+      '030_remove_duplicate_ot_columns.sql',
+      '031_add_celula_and_costo_to_projects.sql',
+      '032_add_costo_ot_to_orders_of_work.sql',
+      '033_fix_null_costo_ot.sql',
+      '034_add_ot_id_to_project_assignments.sql',
+      '035_create_licitaciones.sql'
     ];
 
     for (const migration of migrations) {

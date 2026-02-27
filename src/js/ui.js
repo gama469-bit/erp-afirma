@@ -89,6 +89,9 @@ function renderEmployees(employees) {
                 </td>
                 <td style="padding:12px 8px;vertical-align:middle;">
                     <div style="display:flex;gap:6px;justify-content:center">
+                        <button class="view-employee btn-action-view" data-id="${emp.id}" title="Ver información del empleado">
+                            👁️ Ver
+                        </button>
                         <button class="edit-employee btn-action-edit" data-id="${emp.id}" title="Actualizar empleado">
                             ✏️ Actualizar
                         </button>
